@@ -8,4 +8,4 @@ compatibility_date = "2026-08-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "study-tracker-db"
-database_id = "DÁN_DATABASE_ID_VÀO_ĐÂY"
+database_id = "1ff6cd29-18f0-487b-8e25-eef6af49fb1c"
