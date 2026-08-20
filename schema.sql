@@ -21,3 +21,14 @@ CREATE TABLE IF NOT EXISTS user_data (
   json       TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- Ảnh đính kèm trong ghi chú. Để riêng khỏi user_data vì JSON học kỳ có giới hạn 2MB.
+CREATE TABLE IF NOT EXISTS images (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  mime       TEXT NOT NULL,
+  size       INTEGER NOT NULL,
+  data       BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_images_user ON images(user_id);

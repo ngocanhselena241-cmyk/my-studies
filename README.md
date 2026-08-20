@@ -4,7 +4,8 @@ Web theo dõi tiến độ học tập một học kỳ. Có đăng nhập, dữ
 
 **Tính năng:** dashboard học kỳ · trang từng môn · tracker tuần 1–13 · task & checklist ·
 assessment kèm subtask & deadline · grade calculator và what-if · lịch ngày/tuần/tháng ·
-thống kê & giờ học · chủ đề và mức nắm vững · spaced repetition · ghi chú Markdown ·
+thống kê & giờ học · chủ đề và mức nắm vững · spaced repetition ·
+ghi chú Markdown có đính kèm ảnh (chọn file, kéo thả hoặc dán Ctrl/⌘+V) ·
 thư viện case/công thức/khái niệm · quản lý tài liệu · chế độ ôn thi · pomodoro ·
 chuỗi ngày học và XP · trợ lý xếp lịch học.
 
@@ -82,7 +83,11 @@ thì đăng nhập sẽ không hoạt động.
    SELECT name FROM sqlite_master WHERE type='table';
    ```
 
-   Phải thấy `users`, `sessions`, `user_data`.
+   Phải thấy `users`, `sessions`, `user_data`, `images`.
+
+   > Nếu bạn đã tạo database từ trước khi có tính năng ảnh, chỉ cần dán lại
+   > **toàn bộ** `schema.sql` một lần nữa. Mọi lệnh đều là `CREATE TABLE IF NOT EXISTS`
+   > nên bảng cũ và dữ liệu cũ không bị đụng tới, chỉ thêm bảng `images`.
 
 Không cần dùng Terminal ở bước này.
 
@@ -147,6 +152,16 @@ không đọc được.
 **Dữ liệu** của mỗi người lưu thành một khối JSON trong bảng `user_data`. Cách này
 đơn giản và đủ nhanh với vài chục KB mỗi tài khoản. Nếu sau này cần truy vấn chéo
 (ví dụ thống kê toàn bộ người dùng) thì mới cần tách thành nhiều bảng.
+
+**Ảnh trong ghi chú** không nằm trong khối JSON đó mà để riêng ở bảng `images`, vì
+JSON mỗi tài khoản bị giới hạn 2MB. Trước khi gửi đi, trình duyệt tự thu ảnh về tối đa
+1600px cạnh dài và nén sang WebP — một ảnh chụp màn hình 6MB thường còn khoảng 10–200KB.
+Mỗi ghi chú tối đa 12 ảnh, mỗi tài khoản tổng cộng 60MB. Ở chế độ dùng thử (chưa đăng
+nhập) ảnh nằm trong IndexedDB của trình duyệt, và sẽ tự chuyển lên tài khoản khi bạn
+đăng nhập rồi chọn mang dữ liệu dùng thử lên.
+
+**File sao lưu** (nút *Tải file sao lưu* trong Cài đặt) gói luôn cả ảnh vào file JSON,
+nên nạp lại ở máy khác vẫn còn ảnh.
 
 **Tự lưu** sau mỗi thay đổi khoảng 0,8 giây. Nhiều thay đổi liên tiếp gộp thành
 một lần ghi. Góc trên bên phải hiện trạng thái: Đang lưu… / Đã lưu / Chưa lưu được.

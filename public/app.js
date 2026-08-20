@@ -72,6 +72,288 @@ function normalize(d){
   return migrate(d && typeof d === "object" ? d : blankState());
 }
 
+/* ---------- 1b. KHO ẢNH --------------------------------------------------
+   Ảnh đính kèm ghi chú không nằm trong JSON học kỳ (JSON bị giới hạn 2MB),
+   mà để riêng:
+   - cloud: bảng images trong D1, đọc qua /api/img/<id>
+   - local: IndexedDB của trình duyệt (nếu bị chặn thì giữ tạm trong RAM)
+   Ghi chú chỉ giữ phần mô tả nhẹ: {id, name, mime, w, h, size}.
+   ------------------------------------------------------------------------ */
+var IMG_MAX_BYTES = 1500000;    // mỗi ảnh sau khi nén
+var IMG_MAX_DIM   = 1600;       // cạnh dài nhất, px
+var IMG_PER_NOTE  = 12;
+
+var imgCache = {};              // id -> URL dùng được cho <img src>
+var idbDB = null, idbBroken = false, imgRAM = {};
+
+function idbOpen(){
+  if(idbBroken || !window.indexedDB) return Promise.reject(new Error("no idb"));
+  if(idbDB) return Promise.resolve(idbDB);
+  return new Promise(function(res,rej){
+    var rq;
+    try{ rq = indexedDB.open("study-tracker-img",1); }
+    catch(e){ idbBroken=true; rej(e); return; }
+    rq.onupgradeneeded = function(){ rq.result.createObjectStore("img",{keyPath:"id"}); };
+    rq.onsuccess = function(){ idbDB = rq.result; res(idbDB); };
+    rq.onerror   = function(){ idbBroken=true; rej(rq.error); };
+  });
+}
+function idbRun(mode, fn){
+  return idbOpen().then(function(db){
+    return new Promise(function(res,rej){
+      var rq = fn(db.transaction("img",mode).objectStore("img"));
+      rq.onsuccess = function(){ res(rq.result); };
+      rq.onerror   = function(){ rej(rq.error); };
+    });
+  });
+}
+function localImgPut(rec){
+  return idbRun("readwrite",function(st){ return st.put(rec); })
+    .catch(function(){ imgRAM[rec.id]=rec; });          // riêng tư / hết chỗ: giữ tạm trong RAM
+}
+function localImgGet(id){
+  return idbRun("readonly",function(st){ return st.get(id); })
+    .catch(function(){ return null; })
+    .then(function(r){ return r || imgRAM[id] || null; });
+}
+function localImgDel(id){
+  delete imgRAM[id];
+  return idbRun("readwrite",function(st){ return st.delete(id); }).catch(function(){});
+}
+
+/* nén ảnh ngay trên máy trước khi lưu — ảnh chụp màn hình thường 3–8MB */
+function canvasBlob(cv,mime,q){
+  return new Promise(function(res){
+    try{ cv.toBlob(function(b){ res(b); }, mime, q); }
+    catch(e){ res(null); }
+  });
+}
+function loadBitmap(file){
+  return new Promise(function(res,rej){
+    var url = URL.createObjectURL(file), im = new Image();
+    im.onload  = function(){ res({img:im,url:url}); };
+    im.onerror = function(){ URL.revokeObjectURL(url); rej(new Error("Không đọc được file ảnh này")); };
+    im.src = url;
+  });
+}
+function encodeFit(cv, mime, quals, i){
+  return canvasBlob(cv,mime,quals[i]).then(function(b){
+    if(!b) return null;
+    if(b.size<=IMG_MAX_BYTES || i>=quals.length-1) return b;
+    return encodeFit(cv,mime,quals,i+1);
+  });
+}
+function shrinkImage(file){
+  /* GIF giữ nguyên, vẽ lại canvas là mất ảnh động */
+  if(file.type==="image/gif"){
+    return file.size<=IMG_MAX_BYTES
+      ? Promise.resolve({blob:file,mime:file.type,w:0,h:0})
+      : Promise.reject(new Error("Ảnh GIF quá lớn (tối đa 1.5MB)"));
+  }
+  return loadBitmap(file).then(function(r){
+    var w = r.img.naturalWidth||r.img.width, h = r.img.naturalHeight||r.img.height;
+    var fits = Math.max(w,h) <= IMG_MAX_DIM;
+    /* ảnh vốn đã nhỏ và nhẹ thì giữ nguyên bản gốc cho nét */
+    if(fits && file.size<=300000 && /^image\/(png|jpeg|webp)$/.test(file.type)){
+      URL.revokeObjectURL(r.url);
+      return {blob:file,mime:file.type,w:w,h:h};
+    }
+    var sc = fits ? 1 : IMG_MAX_DIM/Math.max(w,h);
+    var step = function(scale){
+      var cw = Math.max(1,Math.round(w*scale)), ch = Math.max(1,Math.round(h*scale));
+      var cv = document.createElement("canvas");
+      cv.width=cw; cv.height=ch;
+      cv.getContext("2d").drawImage(r.img,0,0,cw,ch);
+      return encodeFit(cv,"image/webp",[0.85,0.7,0.55],0).then(function(b){
+        var mime = "image/webp";
+        if(!b || b.type!=="image/webp"){                 // trình duyệt cũ không xuất được webp
+          mime = "image/jpeg";
+          return encodeFit(cv,"image/jpeg",[0.85,0.7,0.55],0).then(function(b2){ return {b:b2,mime:mime}; });
+        }
+        return {b:b,mime:mime};
+      }).then(function(out){
+        if(!out.b) throw new Error("Trình duyệt không nén được ảnh này");
+        if(out.b.size>IMG_MAX_BYTES && scale>0.35) return step(scale*0.75);
+        return {blob:out.b,mime:out.mime,w:cw,h:ch};
+      });
+    };
+    return step(sc).then(function(out){ URL.revokeObjectURL(r.url); return out; },
+                         function(err){ URL.revokeObjectURL(r.url); throw err; });
+  });
+}
+
+/* thêm một ảnh vào kho, trả về phần mô tả để gắn vào ghi chú */
+function imgAdd(file){
+  if(!file || String(file.type).indexOf("image/")!==0)
+    return Promise.reject(new Error("“"+(file&&file.name||"File")+"” không phải ảnh"));
+  return shrinkImage(file).then(function(r){
+    if(r.blob.size>IMG_MAX_BYTES) throw new Error("Ảnh vẫn quá lớn sau khi nén");
+    return imgStore(r.blob,r.mime).then(function(id){
+      imgCache[id] = URL.createObjectURL(r.blob);        // hiện ngay, khỏi tải lại từ server
+      return {id:id, name:(file.name||"").slice(0,80), mime:r.mime,
+              w:r.w||0, h:r.h||0, size:r.blob.size};
+    });
+  });
+}
+/* đưa bytes vào kho, trả về id */
+function imgStore(blob, mime){
+  if(MODE==="cloud"){
+    return fetch("/api/img",{method:"POST",credentials:"same-origin",
+                             headers:{"Content-Type":mime},body:blob})
+      .then(function(res){
+        return res.json().catch(function(){ return {}; }).then(function(b){
+          if(!res.ok) throw new Error(b.error||("Không tải được ảnh lên (lỗi "+res.status+")"));
+          return b.id;
+        });
+      });
+  }
+  var id = "l"+uid()+uid();
+  return localImgPut({id:id,mime:mime,blob:blob,created:Date.now()}).then(function(){ return id; });
+}
+function imgSrc(id){
+  if(imgCache[id]) return Promise.resolve(imgCache[id]);
+  if(MODE==="cloud"){
+    imgCache[id] = "/api/img/"+encodeURIComponent(id);
+    return Promise.resolve(imgCache[id]);
+  }
+  return localImgGet(id).then(function(rec){
+    if(!rec || !rec.blob) return null;
+    imgCache[id] = URL.createObjectURL(rec.blob);
+    return imgCache[id];
+  }).catch(function(){ return null; });
+}
+/* lấy bytes để xuất file sao lưu */
+function imgBlob(id){
+  if(MODE==="cloud"){
+    return fetch("/api/img/"+encodeURIComponent(id),{credentials:"same-origin"})
+      .then(function(r){ return r.ok ? r.blob() : null; })
+      .catch(function(){ return null; });
+  }
+  return localImgGet(id).then(function(rec){ return rec ? rec.blob : null; })
+                        .catch(function(){ return null; });
+}
+function imgDel(id){
+  if(imgCache[id] && imgCache[id].indexOf("blob:")===0) URL.revokeObjectURL(imgCache[id]);
+  delete imgCache[id];
+  if(MODE==="cloud") return api("/api/img/"+encodeURIComponent(id),{method:"DELETE"}).catch(function(){});
+  return localImgDel(id);
+}
+
+/* HTML render ra <img data-img="id">, xong mới gắn src thật vào */
+function hydrateImages(root){
+  var els = (root||document).querySelectorAll("img[data-img]:not([data-img-on])");
+  for(var i=0;i<els.length;i++)(function(el){
+    el.setAttribute("data-img-on","1");
+    var miss = function(){
+      var ph = document.createElement("span");
+      ph.className = "img-missing";
+      ph.textContent = "Ảnh không còn trong kho";
+      if(el.parentNode) el.parentNode.replaceChild(ph,el);
+    };
+    el.onerror = miss;
+    imgSrc(el.getAttribute("data-img")).then(function(url){
+      if(url) el.src = url; else miss();
+    });
+  })(els[i]);
+}
+
+/* mọi id ảnh đang được ghi chú dùng tới */
+function allImageIds(state){
+  var ids = [], i, j;
+  for(i=0;i<(state.subjects||[]).length;i++){
+    var ns = state.subjects[i].notes || [];
+    for(j=0;j<ns.length;j++){
+      var ims = ns[j].images || [];
+      for(var k=0;k<ims.length;k++) if(ims[k] && ims[k].id) ids.push(ims[k].id);
+    }
+  }
+  return ids;
+}
+
+/* gói ảnh vào file sao lưu, và bung ra khi nạp lại */
+function blobToDataURL(blob){
+  return new Promise(function(res){
+    var fr = new FileReader();
+    fr.onload  = function(){ res(String(fr.result)); };
+    fr.onerror = function(){ res(null); };
+    fr.readAsDataURL(blob);
+  });
+}
+function dataURLToBlob(url){
+  var m = /^data:([^;,]+)(;base64)?,(.*)$/.exec(String(url||""));
+  if(!m) return null;
+  var mime = m[1], body = m[3];
+  var bin = m[2] ? atob(body) : decodeURIComponent(body);
+  var arr = new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+function collectImages(ids){
+  var bundle = {};
+  return ids.reduce(function(chain,id){
+    return chain.then(function(){
+      return imgBlob(id).then(function(b){
+        if(!b) return;
+        return blobToDataURL(b).then(function(u){ if(u) bundle[id] = u; });
+      });
+    });
+  }, Promise.resolve()).then(function(){ return bundle; });
+}
+/* kho mới cấp id mới, nên phải viết lại id ở cả mô tả lẫn markdown trong nội dung */
+function remapImageIds(state, map, dropUnmapped){
+  for(var i=0;i<(state.subjects||[]).length;i++){
+    var ns = state.subjects[i].notes || [];
+    for(var j=0;j<ns.length;j++){
+      var n = ns[j];
+      var keep = [];
+      for(var k=0;k<(n.images||[]).length;k++){
+        var im = n.images[k];
+        if(!im || !im.id) continue;
+        if(map[im.id]){ im.id = map[im.id]; keep.push(im); }
+        else if(!dropUnmapped) keep.push(im);      // ảnh không đổi kho thì giữ nguyên id
+      }
+      n.images = keep;
+      if(n.body) n.body = String(n.body).replace(/\(img:([A-Za-z0-9_-]{1,64})\)/g, function(all,id){
+        return map[id] ? "(img:"+map[id]+")" : all;
+      });
+    }
+  }
+}
+
+/* nạp ảnh từ file sao lưu */
+function restoreImages(state, bundle){
+  var ids = Object.keys(bundle||{}), map = {};
+  return ids.reduce(function(chain,old){
+    return chain.then(function(){
+      var b = dataURLToBlob(bundle[old]);
+      if(!b) return;
+      return imgStore(b, b.type||"image/webp").then(function(nid){
+        map[old] = nid;
+        imgCache[nid] = URL.createObjectURL(b);
+      }).catch(function(){});
+    });
+  }, Promise.resolve()).then(function(){ remapImageIds(state, map, true); });
+}
+
+/* dữ liệu dùng thử chuyển lên tài khoản: ảnh phải rời IndexedDB để lên D1 */
+function migrateLocalImages(state){
+  var ids = allImageIds(state).filter(function(id){ return String(id).charAt(0)==="l"; });
+  if(!ids.length || MODE!=="cloud") return Promise.resolve();
+  var map = {};
+  return ids.reduce(function(chain,old){
+    return chain.then(function(){
+      return localImgGet(old).then(function(rec){
+        if(!rec || !rec.blob) return;
+        return imgStore(rec.blob, rec.mime || rec.blob.type || "image/webp").then(function(nid){
+          map[old] = nid;
+          delete imgCache[old];
+          return localImgDel(old);
+        });
+      }).catch(function(){});
+    });
+  }, Promise.resolve()).then(function(){ remapImageIds(state, map); });
+}
+
 /* ---------- 2. TIỆN ÍCH --------------------------------------------------- */
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function $(id){ return document.getElementById(id); }
@@ -361,6 +643,7 @@ function render(){
     : v.tab==="analytics" ? viewAnalytics()
     : viewSettings();
   $("root").innerHTML = '<div class="app">'+topbar()+body+'</div>';
+  hydrateImages($("root"));
 }
 
 function topbar(){
@@ -853,8 +1136,13 @@ function openModal(title, body, foot){
     + '<div class="modal-body">'+body+'</div>'
     + '<div class="modal-foot">'+(foot||'<button class="btn" data-act="closeModal">Đóng</button>')+'</div>'
     + '</div></div>';
+  hydrateImages($("modal-root"));
 }
-function closeModal(){ $("modal-root").innerHTML=""; }
+function closeModal(){
+  /* đóng hộp thoại mà chưa Lưu thì bỏ luôn ảnh vừa tải lên, tránh rác trong kho */
+  if(typeof discardNoteDraft === "function") discardNoteDraft();
+  $("modal-root").innerHTML = "";
+}
 function fld(id,label,type,val,extra){
   return '<label class="fl"><span>'+label+'</span><input id="'+id+'" type="'+type+'" value="'+esc(val==null?"":val)+'" '+(extra||"")+'></label>';
 }
@@ -1131,12 +1419,18 @@ var ACT = {
   },
   seed:function(){ seedDemo(); toast("Đã nạp dữ liệu mẫu"); },
   export:function(){
-    var blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
-    var a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);
-    a.download="study-tracker-"+iso(today())+".json";
-    a.click();
-    toast("Đã tải file sao lưu");
+    var ids = allImageIds(S);
+    if(ids.length) toast("Đang gói "+ids.length+" ảnh vào file sao lưu…");
+    collectImages(ids).then(function(bundle){
+      var out = JSON.parse(JSON.stringify(S));
+      if(Object.keys(bundle).length) out._images = bundle;
+      var blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+      var a=document.createElement("a");
+      a.href=URL.createObjectURL(blob);
+      a.download="study-tracker-"+iso(today())+".json";
+      a.click();
+      toast("Đã tải file sao lưu");
+    });
     return "skip";
   },
   import:function(){
@@ -1146,12 +1440,19 @@ var ACT = {
       var f=inp.files[0]; if(!f) return;
       var r=new FileReader();
       r.onload=function(){
+        var d;
         try{
-          var d=JSON.parse(r.result);
+          d=JSON.parse(r.result);
           if(!d.subjects) throw 0;
+        }catch(e){ toast("File không đúng định dạng"); return; }
+        var bundle = d._images || {};
+        delete d._images;
+        var n = Object.keys(bundle).length;
+        if(n) toast("Đang khôi phục "+n+" ảnh…");
+        restoreImages(d, bundle).then(function(){
           S=migrate(d);
           save(); render(); toast("Đã nạp dữ liệu");
-        }catch(e){ toast("File không đúng định dạng"); }
+        });
       };
       r.readAsText(f);
     };
@@ -1160,6 +1461,7 @@ var ACT = {
   },
   reset:function(){
     if(!confirm("Xoá sạch mọi thứ và bắt đầu lại? Không khôi phục được.")) return "skip";
+    allImageIds(S).forEach(imgDel);
     S=blankState();
     if(typeof migrateExtra==="function") migrateExtra(S);
     S.view.calMonth=iso(new Date(today().getFullYear(),today().getMonth(),1));
@@ -1442,6 +1744,7 @@ function afterAuth(isNew){
     if(isNew && empty && local && local.subjects && local.subjects.length
        && confirm("Tìm thấy dữ liệu bạn đã nhập ở chế độ dùng thử. Chuyển lên tài khoản này?")){
       S = normalize(local);
+      migrateLocalImages(S).then(function(){ save(); render(); });
       save();
     } else {
       S = normalize(d.state);
@@ -1468,7 +1771,10 @@ ACT.uploadLocal = function(){
   var local = lsGet();
   if(!local || !local.subjects || !local.subjects.length){ toast("Máy này không có dữ liệu dùng thử nào"); return "skip"; }
   if(!confirm("Ghi đè dữ liệu tài khoản bằng dữ liệu dùng thử trên máy này?")) return "skip";
-  S = normalize(local); save(); render(); toast("Đã chuyển lên tài khoản");
+  S = normalize(local);
+  save(); render();
+  migrateLocalImages(S).then(function(){ save(); render(); });
+  toast("Đã chuyển lên tài khoản");
   return "skip";
 };
 

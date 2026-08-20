@@ -44,6 +44,7 @@ function migrateExtra(d){
     var s = d.subjects[i];
     s.topics    = s.topics    || [];
     s.notes     = s.notes     || [];
+    for(var n=0;n<s.notes.length;n++) s.notes[n].images = s.notes[n].images || [];
     s.library   = s.library   || [];
     s.resources = s.resources || [];
     s.examList  = s.examList  || null;
@@ -272,6 +273,11 @@ function md(src){
   function closeList(){ if(inList){ out.push("</"+inList+">"); inList=null; } }
   function inline(t){
     return t
+      /* ảnh phải xử lý trước link, nếu không luật link sẽ ăn mất phần [alt](...) */
+      .replace(/!\[([^\]]*)\]\(img:([A-Za-z0-9_-]{1,64})\)/g,
+               '<img class="md-img" data-img="$2" alt="$1" title="$1" data-act="lightbox">')
+      .replace(/!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g,
+               '<img class="md-img" src="$2" alt="$1" title="$1" loading="lazy">')
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
@@ -602,7 +608,9 @@ function subNotes(s){
     var n=sorted[i];
     list += '<button class="notecard '+(S.view.noteId===n.id?"on":"")+'" data-act="openNote" data-nid="'+n.id+'">'
       + '<span class="row" style="gap:7px;margin-bottom:3px"><span class="pill">'+esc(n.kind||"Khác")+'</span>'
-      + (n.week?'<span class="mono" style="font-size:10.5px;color:var(--ink3)">Tuần '+n.week+'</span>':'')+'</span>'
+      + (n.week?'<span class="mono" style="font-size:10.5px;color:var(--ink3)">Tuần '+n.week+'</span>':'')
+      + ((n.images&&n.images.length)?'<span class="mono" style="font-size:10.5px;color:var(--ink3)">'+n.images.length+' ảnh</span>':'')
+      + '</span>'
       + '<span class="notetitle">'+esc(n.title||"Không tên")+'</span></button>';
   }
   var cur = null;
@@ -614,7 +622,7 @@ function subNotes(s){
       + '<div class="row" style="gap:6px">'
       + '<button class="btn sm" data-act="editNote" data-sid="'+s.id+'" data-nid="'+cur.id+'">Sửa</button>'
       + '<button class="btn sm danger" data-act="delNote" data-sid="'+s.id+'" data-nid="'+cur.id+'">Xoá</button></div></div>'
-      + '<div class="card-pad md">'+md(cur.body)+'</div></div>'
+      + '<div class="card-pad md">'+md(cur.body)+noteGallery(cur)+'</div></div>'
     : '<div class="center-empty">Chọn một ghi chú bên trái, hoặc tạo ghi chú mới.</div>';
 
   return '<div class="split">'
@@ -1170,9 +1178,128 @@ function modalNote(sid,nid){
     + '</div>'
     + '<label class="fl"><span>Nội dung (dùng được Markdown)</span>'
     + '<textarea id="f_nb" style="min-height:220px">'+esc(n?n.body:"")+'</textarea></label>'
-    + '<p class="muted" style="font-size:12px;margin:0">## tiêu đề · **đậm** · *nghiêng* · `mã` · - gạch đầu dòng · &gt; trích dẫn</p>',
+    + '<p class="muted" style="font-size:12px;margin:0 0 14px">## tiêu đề · **đậm** · *nghiêng* · `mã` · - gạch đầu dòng · &gt; trích dẫn</p>'
+    + '<div class="attach" id="f_attach">'
+      + '<div class="attach-head"><span class="eyebrow">Hình ảnh</span>'
+        + '<button class="btn sm" data-act="pickNoteImg">+ Chọn ảnh</button></div>'
+      + '<div class="attach-grid" id="f_nimgs"></div>'
+      + '<p class="attach-hint">Kéo thả ảnh vào đây, hoặc dán ảnh (Ctrl/⌘+V) khi đang gõ nội dung. '
+      + 'Ảnh không chèn vào bài sẽ hiện thành thư viện ở cuối ghi chú.</p>'
+    + '</div>',
     '<button class="btn" data-act="closeModal">Huỷ</button>'
     + '<button class="btn acc" data-act="saveNote" data-sid="'+sid+'" data-nid="'+(nid||"")+'">Lưu</button>');
+
+  /* bản nháp ảnh của lần mở hộp thoại này */
+  noteDraft = {
+    images: (n && n.images ? n.images.slice() : []),
+    orig:   (n && n.images ? n.images.map(function(x){ return x.id; }) : []),
+    added:  [],
+    saved:  false,
+    busy:   0
+  };
+  paintNoteImgs();
+}
+
+/* ---------- K2. ẢNH ĐÍNH KÈM TRONG GHI CHÚ ------------------------------- */
+var noteDraft = null;
+
+/* huỷ hộp thoại: ảnh vừa tải lên mà chưa Lưu thì xoá khỏi kho */
+function discardNoteDraft(){
+  if(!noteDraft) return;
+  var d = noteDraft;
+  noteDraft = null;
+  if(!d.saved) for(var i=0;i<d.added.length;i++) imgDel(d.added[i]);
+}
+
+function paintNoteImgs(){
+  var box = $("f_nimgs");
+  if(!box || !noteDraft) return;
+  var out = "", i;
+  for(i=0;i<noteDraft.images.length;i++){
+    var im = noteDraft.images[i];
+    out += '<div class="thumb">'
+      + '<img data-img="'+esc(im.id)+'" alt="'+esc(im.name||"")+'">'
+      + '<div class="thumb-bar">'
+        + '<button class="btn ghost sm" data-act="insertNoteImg" data-iid="'+esc(im.id)+'" title="Chèn vào chỗ con trỏ">⤵ Chèn</button>'
+        + '<button class="btn ghost sm danger" data-act="rmNoteImg" data-iid="'+esc(im.id)+'" title="Bỏ ảnh">✕</button>'
+      + '</div></div>';
+  }
+  if(noteDraft.busy) out += '<div class="thumb thumb-load"><span class="mono">đang xử lý…</span></div>';
+  box.innerHTML = out || '<div class="attach-empty">Chưa có ảnh nào.</div>';
+  hydrateImages(box);
+}
+
+function insertAtCursor(ta, text){
+  if(!ta) return;
+  var a = ta.selectionStart, b = ta.selectionEnd, v = ta.value;
+  var before = v.slice(0,a), after = v.slice(b);
+  if(before && !/\n$/.test(before)) text = "\n" + text;
+  if(after  && !/^\n/.test(after))  text = text + "\n";
+  ta.value = before + text + after;
+  var pos = before.length + text.length;
+  ta.focus();
+  try{ ta.setSelectionRange(pos,pos); }catch(e){}
+}
+function insertNoteImgMd(im){
+  insertAtCursor($("f_nb"), "!["+String(im.name||"").replace(/[\[\]()]/g,"")+"](img:"+im.id+")");
+}
+
+/* nhận file từ nút chọn, kéo thả hoặc dán */
+function addNoteFiles(files, inline){
+  if(!noteDraft) return;
+  var list = [], i;
+  for(i=0;i<files.length;i++) if(files[i] && /^image\//.test(files[i].type)) list.push(files[i]);
+  if(!list.length){ toast("Không thấy file ảnh nào"); return; }
+  if(noteDraft.images.length + list.length > IMG_PER_NOTE){
+    toast("Mỗi ghi chú tối đa "+IMG_PER_NOTE+" ảnh");
+    return;
+  }
+  noteDraft.busy += list.length;
+  paintNoteImgs();
+
+  var ok = 0;
+  list.reduce(function(chain,f){
+    return chain.then(function(){
+      return imgAdd(f).then(function(im){
+        if(!noteDraft) return imgDel(im.id);          // hộp thoại đã đóng giữa chừng
+        noteDraft.images.push(im);
+        noteDraft.added.push(im.id);
+        if(inline) insertNoteImgMd(im);
+        ok++;
+      }).catch(function(err){
+        toast(err && err.message ? err.message : "Không thêm được ảnh");
+      }).then(function(){
+        if(noteDraft){ noteDraft.busy--; paintNoteImgs(); }
+      });
+    });
+  }, Promise.resolve()).then(function(){
+    if(ok) toast(ok>1 ? "Đã thêm "+ok+" ảnh" : "Đã thêm ảnh");
+  });
+}
+
+/* các ảnh đã đính kèm nhưng chưa chèn vào nội dung */
+function looseImages(n){
+  var body = String(n.body||""), out = [], ims = n.images || [];
+  for(var i=0;i<ims.length;i++)
+    if(body.indexOf("(img:"+ims[i].id+")") < 0) out.push(ims[i]);
+  return out;
+}
+function noteGallery(n){
+  var rest = looseImages(n), out = "", i;
+  if(!rest.length) return "";
+  for(i=0;i<rest.length;i++)
+    out += '<button class="gal-item" data-act="lightbox" data-iid="'+esc(rest[i].id)+'">'
+         + '<img data-img="'+esc(rest[i].id)+'" alt="'+esc(rest[i].name||"")+'"></button>';
+  return '<div class="gal-wrap"><div class="eyebrow" style="margin-bottom:8px">Hình ảnh · '+rest.length+'</div>'
+       + '<div class="gal">'+out+'</div></div>';
+}
+
+function openLightbox(id){
+  $("modal-root").innerHTML =
+    '<div class="scrim lightbox" data-act="closeLight">'
+    + '<img data-img="'+esc(id)+'" data-act="noop" alt="">'
+    + '<button class="btn sm lb-close" data-act="closeLight">✕ Đóng</button></div>';
+  hydrateImages($("modal-root"));
 }
 
 function modalLib(sid,lid){
@@ -1319,15 +1446,59 @@ ACT.saveNote = function(el){
   n.week = val("f_nw") ? +val("f_nw") : null;
   n.body = $("f_nb") ? $("f_nb").value : "";
   n.updated = iso(today());
+
+  if(noteDraft){
+    if(noteDraft.busy){ toast("Đợi ảnh xử lý xong đã"); return "skip"; }
+    n.images = noteDraft.images.slice();
+    /* ảnh đã gỡ khỏi ghi chú thì xoá luôn khỏi kho */
+    var keep = {};
+    for(i=0;i<n.images.length;i++) keep[n.images[i].id] = 1;
+    noteDraft.orig.concat(noteDraft.added).forEach(function(id){ if(!keep[id]) imgDel(id); });
+    noteDraft.saved = true;
+  }
+
   S.view.noteId = n.id;
   closeModal();
 };
 ACT.delNote = function(el){
   if(!confirm("Xoá ghi chú này?")) return "skip";
   var s=subj(el.dataset.sid);
+  for(var i=0;i<s.notes.length;i++)
+    if(s.notes[i].id===el.dataset.nid) (s.notes[i].images||[]).forEach(function(im){ imgDel(im.id); });
   s.notes = s.notes.filter(function(x){ return x.id!==el.dataset.nid; });
   S.view.noteId = null;
 };
+
+/* --- ảnh trong ghi chú --- */
+ACT.pickNoteImg = function(){
+  var inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "image/png,image/jpeg,image/webp,image/gif";
+  inp.multiple = true;
+  inp.onchange = function(){ if(inp.files && inp.files.length) addNoteFiles(inp.files, false); };
+  inp.click();
+  return "skip";
+};
+ACT.insertNoteImg = function(el){
+  if(!noteDraft) return "skip";
+  for(var i=0;i<noteDraft.images.length;i++)
+    if(noteDraft.images[i].id===el.dataset.iid) insertNoteImgMd(noteDraft.images[i]);
+  toast("Đã chèn vào nội dung");
+  return "skip";
+};
+ACT.rmNoteImg = function(el){
+  if(!noteDraft) return "skip";
+  var id = el.dataset.iid;
+  noteDraft.images = noteDraft.images.filter(function(x){ return x.id!==id; });
+  /* gỡ luôn đoạn markdown đang trỏ tới ảnh này */
+  var ta = $("f_nb");
+  if(ta) ta.value = ta.value.replace(new RegExp("!\\[[^\\]]*\\]\\(img:"+id+"\\)\\n?","g"), "");
+  paintNoteImgs();
+  return "skip";
+};
+ACT.lightbox   = function(el){ openLightbox(el.dataset.iid || el.getAttribute("data-img")); return "skip"; };
+ACT.closeLight = function(){ $("modal-root").innerHTML = ""; return "skip"; };
+ACT.noop       = function(){ return "skip"; };
 
 ACT.newLib  = function(el){ modalLib(el.dataset.sid,null); return "skip"; };
 ACT.editLib = function(el){ modalLib(el.dataset.sid,el.dataset.lid); return "skip"; };
@@ -1414,6 +1585,54 @@ document.addEventListener("input", function(ev){
   save(); render();
   var again = document.querySelector('[data-act="libSearch"]');
   if(again){ again.focus(); try{ again.setSelectionRange(pos,pos); }catch(e){} }
+});
+
+/* dán ảnh (Ctrl/⌘+V) khi đang mở hộp thoại ghi chú */
+document.addEventListener("paste", function(ev){
+  if(!noteDraft || !ev.clipboardData) return;
+  var t = ev.target;
+  if(!(t && t.closest && t.closest("#modal-root"))) return;
+  var items = ev.clipboardData.items || [], files = [], i;
+  for(i=0;i<items.length;i++)
+    if(items[i].kind==="file" && /^image\//.test(items[i].type)){
+      var f = items[i].getAsFile();
+      if(f) files.push(f);
+    }
+  if(!files.length) return;          // dán chữ thì cứ để trình duyệt làm việc của nó
+  ev.preventDefault();
+  addNoteFiles(files, t.id==="f_nb");
+});
+
+/* kéo thả ảnh vào hộp thoại ghi chú */
+function inNoteModal(ev){
+  var t = ev.target;
+  return !!(noteDraft && t && t.closest && t.closest("#modal-root .modal"));
+}
+document.addEventListener("dragover", function(ev){
+  if(!inNoteModal(ev)) return;
+  ev.preventDefault();
+  if(ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
+  var z = $("f_attach"); if(z) z.classList.add("dragging");
+});
+document.addEventListener("dragleave", function(ev){
+  if(!noteDraft) return;
+  var to = ev.relatedTarget;
+  if(to && to.closest && to.closest("#modal-root .modal")) return;   // vẫn còn trong hộp thoại
+  var z = $("f_attach"); if(z) z.classList.remove("dragging");
+});
+document.addEventListener("drop", function(ev){
+  if(!inNoteModal(ev)) return;
+  ev.preventDefault();
+  var z = $("f_attach"); if(z) z.classList.remove("dragging");
+  var files = ev.dataTransfer && ev.dataTransfer.files;
+  if(files && files.length) addNoteFiles(files, false);
+});
+/* thả ảnh ra ngoài hộp thoại thì đừng để trình duyệt mở file, mất hết dữ liệu đang gõ */
+document.addEventListener("dragover", function(ev){
+  if(ev.dataTransfer && ev.dataTransfer.types && ev.dataTransfer.types.indexOf("Files")>=0) ev.preventDefault();
+});
+document.addEventListener("drop", function(ev){
+  if(ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) ev.preventDefault();
 });
 
 boot();

@@ -8,6 +8,9 @@
      GET  /api/me         đang đăng nhập bằng tài khoản nào
      GET  /api/data       lấy toàn bộ dữ liệu học kỳ
      PUT  /api/data       ghi đè toàn bộ dữ liệu học kỳ
+     POST /api/img        tải lên một ảnh (body là bytes thô, Content-Type là kiểu ảnh)
+     GET  /api/img/<id>   lấy ảnh
+     DEL  /api/img/<id>   xoá ảnh
 
    Cần một D1 database gắn với tên biến DB.
    ========================================================================== */
@@ -16,6 +19,9 @@ const SESSION_DAYS   = 30;
 const COOKIE         = "st_session";
 const PBKDF2_ROUNDS  = 30000;   // đủ mạnh mà vẫn nằm dưới giới hạn 10ms CPU của gói miễn phí
 const MAX_DATA_BYTES = 2_000_000;
+const MAX_IMG_BYTES  = 1_600_000;                  // mỗi ảnh, sau khi trình duyệt đã nén
+const MAX_IMG_TOTAL  = 60_000_000;                 // tổng dung lượng ảnh của một tài khoản
+const IMG_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 /* ---------- tiện ích ------------------------------------------------------ */
 function json(data, status = 200, headers = {}) {
@@ -115,6 +121,9 @@ export async function onRequest(context) {
     if (route === "/me"       && method === "GET")  return await me(request, env);
     if (route === "/data"     && method === "GET")  return await getData(request, env);
     if (route === "/data"     && method === "PUT")  return await putData(request, env);
+    if (route === "/img"      && method === "POST") return await putImage(request, env);
+    if (route.startsWith("/img/") && method === "GET")    return await getImage(request, env, route.slice(5));
+    if (route.startsWith("/img/") && method === "DELETE") return await delImage(request, env, route.slice(5));
     return bad("Không có đường dẫn này", 404);
   } catch (err) {
     return bad("Lỗi server: " + (err && err.message ? err.message : String(err)), 500);
@@ -220,4 +229,72 @@ async function putData(request, env) {
   ).bind(user.id, str, Date.now()).run();
 
   return json({ ok: true, updated_at: Date.now() });
+}
+
+/* ---------- ảnh đính kèm --------------------------------------------------
+   Ảnh nằm ở bảng riêng chứ không nhét vào JSON học kỳ, nên một tài khoản
+   đính kèm được nhiều ảnh mà vẫn không đụng giới hạn 2MB của user_data.
+   -------------------------------------------------------------------------- */
+function bytesOf(value) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (value instanceof Uint8Array) return value;
+  return new Uint8Array(value || []);            // D1 trả BLOB về dạng mảng số
+}
+
+async function putImage(request, env) {
+  const user = await currentUser(env, request);
+  if (!user) return bad("Chưa đăng nhập.", 401);
+
+  const mime = (request.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+  if (!IMG_MIMES.includes(mime)) return bad("Chỉ nhận ảnh PNG, JPEG, WebP hoặc GIF.", 415);
+
+  const buf = await request.arrayBuffer();
+  if (!buf.byteLength) return bad("File ảnh rỗng.");
+  if (buf.byteLength > MAX_IMG_BYTES) return bad("Ảnh quá lớn (tối đa 1.6MB sau khi nén).", 413);
+
+  const used = await env.DB.prepare(
+    `SELECT COALESCE(SUM(size), 0) AS total FROM images WHERE user_id = ?`
+  ).bind(user.id).first();
+  if ((used?.total || 0) + buf.byteLength > MAX_IMG_TOTAL) {
+    return bad("Hết dung lượng ảnh của tài khoản. Xoá bớt ảnh cũ rồi thử lại.", 507);
+  }
+
+  const id = crypto.randomUUID().replace(/-/g, "");
+  await env.DB.prepare(
+    `INSERT INTO images (id, user_id, mime, size, data, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(id, user.id, mime, buf.byteLength, buf, Date.now()).run();
+
+  return json({ id, mime, size: buf.byteLength }, 201);
+}
+
+async function getImage(request, env, rawId) {
+  const user = await currentUser(env, request);
+  if (!user) return bad("Chưa đăng nhập.", 401);
+
+  const id = decodeURIComponent(rawId || "");
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return bad("Không có ảnh này", 404);
+
+  const row = await env.DB.prepare(
+    `SELECT mime, data FROM images WHERE id = ? AND user_id = ?`
+  ).bind(id, user.id).first();
+  if (!row) return bad("Không có ảnh này", 404);
+
+  const bytes = bytesOf(row.data);
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": row.mime,
+      "Content-Length": String(bytes.byteLength),
+      /* ảnh không bao giờ đổi nội dung, id đổi thì mới là ảnh khác */
+      "Cache-Control": "private, max-age=31536000, immutable",
+    },
+  });
+}
+
+async function delImage(request, env, rawId) {
+  const user = await currentUser(env, request);
+  if (!user) return bad("Chưa đăng nhập.", 401);
+
+  const id = decodeURIComponent(rawId || "");
+  await env.DB.prepare(`DELETE FROM images WHERE id = ? AND user_id = ?`).bind(id, user.id).run();
+  return json({ ok: true });
 }
