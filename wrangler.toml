@@ -1,0 +1,11 @@
+# Chỉ cần khi bạn muốn chạy thử API ngay trên máy bằng:  npx wrangler pages dev public
+# Nếu chỉ deploy qua GitHub + Cloudflare dashboard thì file này không bắt buộc.
+
+name = "study-tracker"
+pages_build_output_dir = "public"
+compatibility_date = "2026-08-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "study-tracker-db"
+database_id = "DÁN_DATABASE_ID_VÀO_ĐÂY"
