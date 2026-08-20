@@ -939,7 +939,9 @@ function subWeekly(s){
     out += '<div class="wk '+(w.n===cw?"cur":"")+'">'
       + '<button class="wk-head" data-act="toggleWeek" data-sid="'+s.id+'" data-wk="'+w.n+'">'
         + '<span class="wk-n">TUẦN '+w.n+'</span>'
-        + '<span class="wk-topic">'+esc(w.topic||'<span class="muted">Chưa đặt chủ đề</span>')+'</span>'
+        + '<span class="wk-topic" data-dbl="topic" data-sid="'+s.id+'" data-wk="'+w.n+'" '
+        + 'title="Nhấn đúp để đổi chủ đề">'
+        + (w.topic ? esc(w.topic) : '<span class="muted">Chưa đặt chủ đề</span>')+'</span>'
         + '<span class="bar wk-bar" style="--sc:'+s.color+'"><i style="width:'+wp.pct+'%"></i></span>'
         + '<span class="wk-pct">'+wp.pct+'%</span>'
       + '</button>'
@@ -1309,6 +1311,9 @@ var ACT = {
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk) s.weeks[i].tasks.push({label:lab,done:false});
   },
   editTopic:function(el){
+    /* cùng một cách sửa với nhấn đúp lên tên tuần */
+    var span = document.querySelector('.wk-topic[data-sid="'+el.dataset.sid+'"][data-wk="'+el.dataset.wk+'"]');
+    if(span){ startInlineTopic(span); return "skip"; }
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk){
       var v=prompt("Chủ đề tuần "+el.dataset.wk+":", s.weeks[i].topic||"");
@@ -1505,7 +1510,57 @@ var CHG = {
   setTpl:function(el){ S.template[+el.dataset.i] = el.value; return "noRender"; }
 };
 
+/* ---------- 13b. SỬA TÊN TUẦN NGAY TẠI CHỖ ------------------------------- */
+var inlineEditing = false;
+
+function startInlineTopic(span){
+  if(!span || inlineEditing) return;
+  var s = subj(span.dataset.sid), wk = +span.dataset.wk, w = null;
+  if(!s) return;
+  for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===wk) w = s.weeks[i];
+  if(!w) return;
+  inlineEditing = true;
+
+  var inp = document.createElement("input");
+  inp.type = "text";
+  inp.className = "wk-topic-in";
+  inp.value = w.topic || "";
+  inp.placeholder = "Chủ đề của tuần "+wk;
+  span.innerHTML = "";
+  span.appendChild(inp);
+  inp.focus();
+  inp.select();
+
+  var finish = function(keep){
+    if(!inlineEditing) return;
+    inlineEditing = false;
+    if(keep) w.topic = inp.value.trim();
+    save();
+    /* blur có thể nổ ngay giữa lúc render() đang thay DOM (ví dụ đang gõ dở
+       mà bấm sang tab khác). Hoãn một nhịp để không gọi render lồng render. */
+    setTimeout(render, 0);
+  };
+  inp.addEventListener("keydown", function(ev){
+    ev.stopPropagation();                       /* Esc ở đây không đóng hộp thoại khác */
+    if(ev.key==="Enter"){ ev.preventDefault(); finish(true); }
+    else if(ev.key==="Escape"){ ev.preventDefault(); finish(false); }
+  });
+  inp.addEventListener("blur", function(){ finish(true); });
+  /* ô nhập nằm trong nút mở/đóng tuần — chặn để bấm vào không làm gập tuần lại */
+  inp.addEventListener("click", function(ev){ ev.stopPropagation(); });
+}
+
+document.addEventListener("dblclick", function(ev){
+  var el = ev.target.closest ? ev.target.closest("[data-dbl]") : null;
+  if(!el) return;
+  ev.preventDefault();
+  if(el.dataset.dbl==="topic") startInlineTopic(el);
+});
+
 document.addEventListener("click",function(ev){
+  /* chỗ nào sửa được bằng nhấn đúp thì bấm một lần không làm gì,
+     nếu không cú bấm đầu sẽ render lại và cú thứ hai mất chỗ bám */
+  if(ev.target.closest && ev.target.closest("[data-dbl]")) return;
   var el = ev.target.closest("[data-act]");
   if(!el) return;
   if(el.tagName==="SELECT"||el.tagName==="INPUT"||el.tagName==="TEXTAREA") return;
