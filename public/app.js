@@ -673,24 +673,25 @@ function topbar(){
         + '<span class="overall-lab">hoàn thành</span></div>'
       + '</div>'
     + '</div>'
-    + spine()
     + '<div class="nav">'+nav+'</div>'
   + '</div>';
 }
 
 /* thanh xương sống của học kỳ — tuần 1 → tuần cuối, có mốc assessment */
-function spine(){
+/* only: chỉ chấm deadline của một môn. Bỏ trống thì chấm của cả học kỳ. */
+function spine(only){
   if(!semStart()) return '';
+  var subs = only ? [only] : S.subjects;
   var cw = currentWeek(), out='', n, i, j;
   for(n=1;n<=S.semester.weeks;n++){
     var cls = n<cw ? "past" : (n===cw ? "now" : "");
     var dots='';
-    for(i=0;i<S.subjects.length;i++){
-      for(j=0;j<S.subjects[i].assessments.length;j++){
-        var a=S.subjects[i].assessments[j];
+    for(i=0;i<subs.length;i++){
+      for(j=0;j<subs[i].assessments.length;j++){
+        var a=subs[i].assessments[j];
         if(weekOfDate(parseD(a.due))===n){
           dots += '<i class="spine-dot'+((+a.weight||0)>=30?' big':'')+'" style="background:'+
-                  ((+a.weight||0)>=30?'var(--urgent)':S.subjects[i].color)+'"></i>';
+                  ((+a.weight||0)>=30?'var(--urgent)':subs[i].color)+'"></i>';
         }
       }
     }
@@ -723,58 +724,63 @@ function viewDash(){
 
   var out = '<div class="stack">';
 
-  /* --- Nên làm gì bây giờ --- */
-  var pr = priorities();
-  if(pr.length){
-    var items='';
-    for(var i=0;i<pr.length;i++){
-      var p=pr[i];
-      var title = p.a ? p.a.name : ("Việc tuần "+p.w.n+" — "+(p.w.topic||"chưa đặt tên"));
-      items += '<button class="focus-item" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.1);cursor:pointer" '
-             + 'data-act="go" data-tab="subject" data-sid="'+p.s.id+'" data-sub="'+(p.a?"assess":"weekly")+'">'
-             + '<span class="focus-rank">'+(i+1)+'</span>'
-             + '<span><span class="focus-title" style="color:#fff">'+esc(title)+'</span>'
-             + '<span class="focus-why">'+esc(p.s.code)+' · '+esc(p.why)+'</span></span>'
-             + '</button>';
-    }
-    out += '<div class="focus"><div class="eyebrow" style="margin-bottom:6px">Nên làm gì bây giờ</div>'+items+'</div>';
+  /* --- Cần làm: ưu tiên bây giờ + phần deadline còn lại, gộp một khối ---
+     Trước đây tách thành "Nên làm gì bây giờ" và "Deadline sắp tới", nhưng
+     cùng là một danh sách assessment nên assessment gấp nhất bị kể hai lần. */
+  var pr = priorities(), used = {}, i;
+  var items='';
+  for(i=0;i<pr.length;i++){
+    var p=pr[i];
+    if(p.a) used[p.a.id]=1;
+    var title = p.a ? p.a.name : ("Việc tuần "+p.w.n+" — "+(p.w.topic||"chưa đặt tên"));
+    items += '<button class="focus-item" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.1);cursor:pointer" '
+           + 'data-act="go" data-tab="subject" data-sid="'+p.s.id+'" data-sub="'+(p.a?"assess":"weekly")+'">'
+           + '<span class="focus-rank">'+(i+1)+'</span>'
+           + '<span><span class="focus-title" style="color:#fff">'+esc(title)+'</span>'
+           + '<span class="focus-why">'+esc(p.s.code)+' · '+esc(p.why)+'</span></span>'
+           + '</button>';
   }
 
-  /* --- Các môn đang học --- */
-  out += '<div class="grid g2">';
-  for(var k=0;k<S.subjects.length;k++) out += subjectCard(S.subjects[k]);
-  out += '<button class="subj-card" style="--sc:var(--line);border-style:dashed;box-shadow:none;'
-       + 'display:grid;place-items:center;min-height:150px;color:var(--ink3)" data-act="newSubject">+ Thêm môn học</button>';
-  out += '</div>';
-
-  /* --- Deadline sắp tới --- */
   var range = S.view.dlRange||30;
-  var dl = allDeadlines(), rows='', shown=0;
+  var dl = allDeadlines(), rows='';
   for(var m=0;m<dl.length;m++){
+    if(used[dl[m].a.id]) continue;                 /* đã nằm trong phần ưu tiên rồi */
     var n = daysLeft(dl[m].a.due);
     if(n>range) continue;
     var c = countdown(dl[m].a.due);
-    var p = assProg(dl[m].a);
+    var ap = assProg(dl[m].a);
     rows += '<button class="dl" data-act="openAssess" data-sid="'+dl[m].s.id+'" data-aid="'+dl[m].a.id+'">'
       + '<span class="dl-date"><b>'+dl[m].d.getDate()+'</b>'+MON_SHORT[dl[m].d.getMonth()]+'</span>'
       + '<span class="dl-body"><span class="dl-title">'+esc(dl[m].a.name)+'</span>'
-      + '<span class="dl-meta">'+esc(dl[m].s.code)+' · '+(+dl[m].a.weight||0)+'% · xong '+p.pct+'%</span></span>'
+      + '<span class="dl-meta">'+esc(dl[m].s.code)+' · '+(+dl[m].a.weight||0)+'% · xong '+ap.pct+'%</span></span>'
       + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
       + '</button>';
-    shown++;
   }
   var rangeBtns='';
   [7,14,30].forEach(function(r){
     rangeBtns += '<button class="btn sm '+(range===r?"pri":"")+'" data-act="dlRange" data-n="'+r+'">'+r+' ngày</button>';
   });
-  out += '<div class="card"><div class="card-head"><h3>Deadline sắp tới</h3>'
-       + '<div class="row" style="gap:5px">'+rangeBtns+'</div></div>'
-       + (rows || '<div class="card-pad muted" style="font-size:14px">Không có deadline nào trong '+range+' ngày tới.</div>')
-       + '</div>';
 
-  /* --- Tuần này --- */
-  out += thisWeekCard();
-  out += dashExtras();
+  out += '<div class="card todo">'
+    + (items ? '<div class="focus"><div class="eyebrow" style="margin-bottom:6px">Ưu tiên bây giờ</div>'+items+'</div>' : '')
+    + '<div class="card-head"><h3>'+(items?"Deadline còn lại":"Deadline sắp tới")+'</h3>'
+    + '<div class="row" style="gap:5px">'+rangeBtns+'</div></div>'
+    + (rows || '<div class="card-pad muted" style="font-size:14px">'
+        + (items?'Không còn deadline nào khác trong ':'Không có deadline nào trong ')+range+' ngày tới.</div>')
+    + '</div>';
+
+  /* --- Các môn đang học --- */
+  out += '<div class="grid g2">';
+  for(var k=0;k<S.subjects.length;k++) out += subjectCard(S.subjects[k]);
+  out += '</div>';
+  /* nút thêm môn để riêng một dòng mỏng — trước đây là ô to bằng thẻ môn học,
+     lẻ ra hàng cuối và để trống gần một phần tư màn hình */
+  out += '<button class="addrow" data-act="newSubject">+ Thêm môn học</button>';
+
+  /* --- Tuần này + chủ đề cần ôn: hai danh sách hẹp, để cạnh nhau --- */
+  var wkCard = thisWeekCard(), tpCard = dashExtras();
+  if(wkCard && tpCard) out += '<div class="grid g2 top">'+wkCard+tpCard+'</div>';
+  else out += wkCard + tpCard;
 
   out += '</div>';
   return out;
@@ -811,22 +817,26 @@ function thisWeekCard(){
     var s=S.subjects[i], w=null;
     for(var j=0;j<s.weeks.length;j++) if(s.weeks[j].n===cw) w=s.weeks[j];
     if(!w||!(w.tasks||[]).length) continue;
-    any=true;
-    var wp=weekProg(w), items='';
+    var wp=weekProg(w), items='', left=0;
+    /* chỉ hiện việc chưa xong — việc đã tick nằm ở tab Theo tuần */
     for(var t=0;t<w.tasks.length;t++){
       var tk=w.tasks[t];
-      items += '<button class="check '+(tk.done?"on":"")+'" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'">'
+      if(tk.done) continue;
+      left++;
+      items += '<button class="check" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'">'
              + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(tk.label)+'</span></button>';
     }
+    if(!left) continue;
+    any=true;
     out += '<div style="padding:14px 18px;border-bottom:1px solid var(--line2)">'
          + '<div class="spread" style="margin-bottom:4px"><div class="row" style="gap:8px">'
          + '<span class="pill" style="background:'+s.color+'22;color:'+s.color+';border-color:transparent">'+esc(s.code)+'</span>'
          + '<span style="font-size:13.5px;font-weight:500">'+esc(w.topic||"")+'</span></div>'
-         + '<span class="mono" style="font-size:12px;color:var(--ink3)">'+wp.done+'/'+wp.total+'</span></div>'
+         + '<span class="mono" style="font-size:12px;color:var(--ink3)">còn '+left+'/'+wp.total+'</span></div>'
          + items + '</div>';
   }
   if(!any) return '';
-  return '<div class="card"><div class="card-head"><h3>Tuần '+cw+' — việc cần làm</h3>'
+  return '<div class="card"><div class="card-head"><h3>Tuần '+cw+' — còn phải làm</h3>'
        + '<button class="btn sm ghost" data-act="peekWeek" data-wk="'+cw+'">Xem cả tuần</button></div>'
        + out + '</div>';
 }
@@ -837,14 +847,14 @@ function viewSubject(){
   if(!s){ S.view.tab="dash"; return viewDash(); }
   var st = S.view.subTab||"overview";
   var tabs = [["overview","Tổng quan"],["weekly","Theo tuần"],["assess","Assessment"],["grades","Điểm"],
-              ["topics","Chủ đề"],["notes","Ghi chú"],["library","Thư viện"],["resources","Tài liệu"]];
+              ["topics","Chủ đề"],["notes","Ghi chú"],["library","Thư viện"]];
   var nav='';
   for(var i=0;i<tabs.length;i++){
     nav += '<button data-act="subTab" data-sub="'+tabs[i][0]+'" class="'+(st===tabs[i][0]?"on":"")+'">'+tabs[i][1]+'</button>';
   }
   var body = st==="weekly" ? subWeekly(s) : st==="assess" ? subAssess(s) : st==="grades" ? subGrades(s)
            : st==="topics" ? subTopics(s) : st==="notes" ? subNotes(s)
-           : st==="library" ? subLibrary(s) : st==="resources" ? subResources(s) : subOverview(s);
+           : st==="library" ? subLibrary(s) : subOverview(s);
   return '<div class="stack">'
     + '<div class="spread wrap" style="gap:10px">'
       + '<div><div class="row" style="gap:10px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.color+';display:inline-block"></span>'
@@ -862,9 +872,6 @@ function viewSubject(){
 function subOverview(s){
   var p=subjProg(s), g=gradeInfo(s), na=nextAssessment(s), cw=currentWeek();
   var b=band(g.current);
-  var weeksDone=0;
-  for(var i=0;i<s.weeks.length;i++) if(weekProg(s.weeks[i]).pct===100 && weekProg(s.weeks[i]).total>0) weeksDone++;
-
   var classes='';
   for(var c=0;c<(s.classes||[]).length;c++){
     var cl=s.classes[c];
@@ -883,13 +890,12 @@ function subOverview(s){
   var mins = studyMinutes(function(x){ return x.subjectId===s.id; });
 
   return '<div class="stack">'
-  + '<div class="grid g4">'
+  /* Chỉ giữ ba con số dẫn tới hành động. Tuần hoàn tất trùng ý với tiến độ môn;
+     điểm danh xem ở tab Theo tuần, chủ đề nắm vững xem ở tab Chủ đề. */
+  + '<div class="grid g3">'
     + stat((g.current==null?"—":Math.round(g.current)+'<small>%</small>'),"Điểm hiện tại", b?'var('+b.v+')':null)
     + stat(p.pct+'<small>%</small>',"Tiến độ môn")
-    + stat(weeksDone+'<small>/'+s.weeks.length+'</small>',"Tuần hoàn tất")
     + stat(fmtMins(mins).replace(/([a-z])/g,'<small>$1</small>'),"Thời gian học")
-    + stat((attendance(s)?attendance(s).pct+'<small>%</small>':'—'),"Điểm danh")
-    + stat((s.topics.length?topicStats(s).mastery+'<small>%</small>':'—'),"Chủ đề nắm vững")
   + '</div>'
   + '<div class="grid g2">'
     + '<div class="card"><div class="card-head"><h3>Assessment tiếp theo</h3></div><div class="card-pad">'
@@ -918,6 +924,8 @@ function subOverview(s){
 
 function subWeekly(s){
   var cw = currentWeek(), out='', n;
+  var head = spine(s);
+  if(head) head = '<div class="card card-pad" style="padding-top:2px;padding-bottom:8px">'+head+'</div>';
   for(n=0;n<s.weeks.length;n++){
     var w=s.weeks[n], wp=weekProg(w), open=!!S.view.openWeeks[s.id+"-"+w.n];
     var items='';
@@ -943,7 +951,8 @@ function subWeekly(s){
           + '</div></div>' : '')
     + '</div>';
   }
-  return '<div><div class="spread" style="margin-bottom:12px">'
+  return '<div>' + head
+    + '<div class="spread" style="margin-bottom:12px">'
     + '<span class="eyebrow">'+s.weeks.length+' tuần · nhấn vào tuần để mở checklist</span>'
     + '<button class="btn sm ghost" data-act="go" data-tab="settings">Sửa checklist mẫu</button></div>'
     + out + '</div>';

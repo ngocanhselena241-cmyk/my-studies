@@ -38,6 +38,7 @@ function migrateExtra(d){
   d.view.calFilter = d.view.calFilter || "";
   d.view.examSid   = d.view.examSid   || null;
   d.view.libQuery  = d.view.libQuery  || "";
+  if(d.view.subTab === "resources") d.view.subTab = "library";   // hai tab đã gộp làm một
   d.view.noteId    = d.view.noteId    || null;
 
   for(var i=0;i<d.subjects.length;i++){
@@ -371,7 +372,7 @@ function studyPlan(totalMins){
   }
   /* 2. chủ đề tới hạn ôn */
   var due = dueReviews();
-  for(i=0;i<due.length && i<6;i++){
+  for(i=0;i<due.length && i<5;i++){
     items.push({
       kind:"review", s:due[i].s, ref:due[i].t,
       score: 26 + due[i].over*2 + (5-(due[i].t.confidence||3))*4,
@@ -465,58 +466,58 @@ function cardMarks(s){
 }
 
 function dashExtras(){
-  var out='';
-
-  /* cần ôn hôm nay */
-  var due = dueReviews();
-  if(due.length){
-    var rows='';
-    for(var i=0;i<due.length && i<6;i++){
-      var L = topicLevel(due[i].t);
-      rows += '<div class="spread" style="padding:9px 18px;border-bottom:1px solid var(--line2)">'
-        + '<span><span class="mono" style="font-size:12px;color:'+due[i].s.color+'">'+esc(due[i].s.code)+'</span>'
-        + '<span style="display:block;font-size:14px">'+esc(due[i].t.name)+'</span></span>'
-        + '<span class="row" style="gap:7px">'
-        + (due[i].over>0?'<span class="cd r">trễ '+due[i].over+'n</span>':'<span class="cd y">hôm nay</span>')
-        + '<button class="btn sm" data-act="review" data-sid="'+due[i].s.id+'" data-tid="'+due[i].t.id+'" data-ok="1">Nhớ</button>'
-        + '<button class="btn sm danger" data-act="review" data-sid="'+due[i].s.id+'" data-tid="'+due[i].t.id+'" data-ok="0">Quên</button>'
-        + '</span></div>';
-    }
-    out += '<div class="card"><div class="card-head"><h3>Cần ôn hôm nay</h3>'
-        + '<span class="eyebrow">'+due.length+' chủ đề</span></div>'+rows+'</div>';
+  /* Chủ đề cần ôn — gộp "cần ôn hôm nay" (tới hạn spaced repetition) và
+     "chủ đề cần củng cố" (đang yếu) vào một khối, vì cả hai đều trả lời
+     cùng một câu hỏi: hôm nay nên ôn lại cái gì. */
+  var due = dueReviews(), i, seen = {}, rows='';
+  for(i=0;i<due.length && i<6;i++){
+    seen[due[i].t.id] = 1;
+    rows += '<div class="spread" style="padding:9px 18px;border-bottom:1px solid var(--line2)">'
+      + '<span><span class="mono" style="font-size:12px;color:'+due[i].s.color+'">'+esc(due[i].s.code)+'</span>'
+      + '<span style="display:block;font-size:14px">'+esc(due[i].t.name)+'</span></span>'
+      + '<span class="row" style="gap:7px">'
+      + (due[i].over>0?'<span class="cd r">trễ '+due[i].over+'n</span>':'<span class="cd y">hôm nay</span>')
+      + '<button class="btn sm" data-act="review" data-sid="'+due[i].s.id+'" data-tid="'+due[i].t.id+'" data-ok="1">Nhớ</button>'
+      + '<button class="btn sm danger" data-act="review" data-sid="'+due[i].s.id+'" data-tid="'+due[i].t.id+'" data-ok="0">Quên</button>'
+      + '</span></div>';
   }
 
-  /* chủ đề yếu + streak nằm cạnh nhau */
-  var wk = weakTopics(6), weakHtml='';
-  for(var j=0;j<wk.length;j++){
-    weakHtml += '<button class="spread" style="width:100%;background:none;border:0;padding:7px 0;text-align:left" '
-      + 'data-act="go" data-tab="subject" data-sid="'+wk[j].s.id+'" data-sub="topics">'
-      + '<span class="row" style="gap:8px"><span class="dot" style="background:'+wk[j].L.color+'"></span>'
-      + '<span style="font-size:13.5px">'+esc(wk[j].t.name)+'</span></span>'
-      + '<span class="mono" style="font-size:11px;color:var(--ink3)">'+esc(wk[j].s.code)+'</span></button>';
+  /* chủ đề đang yếu nhưng chưa tới lịch ôn — xếp bên dưới, gọn hơn */
+  var wk = weakTopics(5), weakHtml='', weakN=0;
+  for(i=0;i<wk.length;i++){
+    if(seen[wk[i].t.id]) continue;
+    weakN++;
+    weakHtml += '<button class="spread weakrow" data-act="go" data-tab="subject" data-sid="'+wk[i].s.id+'" data-sub="topics">'
+      + '<span class="row" style="gap:8px"><span class="dot" style="background:'+wk[i].L.color+'"></span>'
+      + '<span style="font-size:13.5px">'+esc(wk[i].t.name)+'</span></span>'
+      + '<span class="mono" style="font-size:11px;color:var(--ink3)">'+esc(wk[i].s.code)+'</span></button>';
   }
 
-  var cards='';
-  if(wk.length){
-    cards += '<div class="card"><div class="card-head"><h3>Chủ đề cần củng cố</h3></div>'
-          + '<div class="card-pad">'+weakHtml+'</div></div>';
-  }
-  if(S.settings.gamify){
-    var st=streak(), lv=levelInfo(), days=weekDaysActive(), dots='';
-    for(var k=0;k<7;k++)
-      dots += '<span class="daydot '+(days[k]?"on":"")+'">'+DOW_SHORT[k]+'</span>';
-    cards += '<div class="card"><div class="card-head"><h3>Chuỗi ngày học</h3>'
-      + '<span class="pill acc">Cấp '+lv.level+'</span></div><div class="card-pad">'
-      + '<div class="row" style="align-items:baseline;gap:10px">'
-      + '<span class="bignum">'+st+'</span><span class="muted" style="font-size:14px">ngày liên tiếp</span></div>'
-      + '<div class="daydots">'+dots+'</div>'
-      + '<div class="spread" style="margin-top:14px"><span class="eyebrow">'+lv.xp+' XP</span>'
-      + '<span class="mono" style="font-size:11px;color:var(--ink3)">còn '+(lv.per-lv.into)+' XP lên cấp '+(lv.level+1)+'</span></div>'
-      + '<div class="bar thin" style="margin-top:6px"><i style="width:'+pct(lv.into,lv.per)+'%"></i></div>'
-      + '</div></div>';
-  }
-  if(cards) out += '<div class="grid g2">'+cards+'</div>';
-  return out;
+  if(!rows && !weakN) return '';
+  return '<div class="card"><div class="card-head"><h3>Chủ đề cần ôn</h3>'
+    + '<span class="eyebrow">'+(due.length?due.length+' tới hạn':'')
+    + (due.length&&weakN?' · ':'')+(weakN?weakN+' đang yếu':'')+'</span></div>'
+    + rows
+    + (weakN?'<div class="card-pad">'
+        + (rows?'<div class="eyebrow" style="margin-bottom:4px">Đang yếu, chưa tới lịch ôn</div>':'')
+        + weakHtml+'</div>':'')
+    + '</div>';
+}
+
+/* chuỗi ngày học + XP — trước ở dashboard, giờ nằm trong tab Phân tích */
+function streakCard(){
+  if(!S.settings.gamify) return '';
+  var st=streak(), lv=levelInfo(), days=weekDaysActive(), dots='';
+  for(var k=0;k<7;k++) dots += '<span class="daydot '+(days[k]?"on":"")+'">'+DOW_SHORT[k]+'</span>';
+  return '<div class="card"><div class="card-head"><h3>Chuỗi ngày học</h3>'
+    + '<span class="pill acc">Cấp '+lv.level+'</span></div><div class="card-pad">'
+    + '<div class="row" style="align-items:baseline;gap:10px">'
+    + '<span class="bignum">'+st+'</span><span class="muted" style="font-size:14px">ngày liên tiếp</span></div>'
+    + '<div class="daydots">'+dots+'</div>'
+    + '<div class="spread" style="margin-top:14px"><span class="eyebrow">'+lv.xp+' XP</span>'
+    + '<span class="mono" style="font-size:11px;color:var(--ink3)">còn '+(lv.per-lv.into)+' XP lên cấp '+(lv.level+1)+'</span></div>'
+    + '<div class="bar thin" style="margin-top:6px"><i style="width:'+pct(lv.into,lv.per)+'%"></i></div>'
+    + '</div></div>';
 }
 
 /* hàng điểm danh trong mỗi tuần */
@@ -665,6 +666,8 @@ function subLibrary(s){
     out += '<div class="card" style="margin-bottom:14px"><div class="card-head"><h3>'+esc(type)+'</h3>'
         + '<span class="eyebrow">'+items.length+'</span></div><div class="card-pad">'+rows+'</div></div>';
   }
+  /* Tài liệu (link Canvas, slides, recording…) trước đây là một tab riêng.
+     Cùng là kho tra cứu của môn nên gộp xuống dưới thư viện. */
   return '<div>'
     + '<div class="spread wrap" style="margin-bottom:14px;gap:9px">'
       + '<input type="text" placeholder="Tìm trong thư viện…" value="'+esc(S.view.libQuery||"")+'" '
@@ -672,6 +675,10 @@ function subLibrary(s){
       + '<button class="btn acc" data-act="newLib" data-sid="'+s.id+'">+ Thêm mục</button>'
     + '</div>'
     + (out || '<div class="center-empty">'+(q?"Không tìm thấy mục nào.":"Chưa có mục nào. Lưu case, công thức, khái niệm hay standard vào đây để tra nhanh trước kỳ thi.")+'</div>')
+    + '<div class="spread wrap" style="margin:26px 0 14px;gap:9px;border-top:1px solid var(--line);padding-top:20px">'
+      + '<span class="eyebrow">Tài liệu &amp; link · '+(s.resources||[]).length+'</span>'
+      + '<button class="btn" data-act="newRes" data-sid="'+s.id+'">+ Thêm tài liệu</button></div>'
+    + subResources(s)
   + '</div>';
 }
 
@@ -706,12 +713,8 @@ function subResources(s){
     out += '<div class="card" style="margin-bottom:12px"><div class="card-head"><h3>Chung cả môn</h3></div>'
         + '<div class="card-pad">'+rows2+'</div></div>';
   }
-  return '<div>'
-    + '<div class="spread" style="margin-bottom:14px">'
-      + '<span class="eyebrow">'+s.resources.length+' tài liệu</span>'
-      + '<button class="btn acc" data-act="newRes" data-sid="'+s.id+'">+ Thêm tài liệu</button></div>'
-    + (out || '<div class="center-empty">Chưa có tài liệu nào. Lưu link Canvas, slides, worksheet, recording hay past exam vào đây.</div>')
-  + '</div>';
+  return out || '<div class="center-empty">Chưa có tài liệu nào. '
+    + 'Lưu link Canvas, slides, worksheet, recording hay past exam vào đây.</div>';
 }
 
 /* ---------- N. LỊCH (tháng / tuần / ngày, lọc theo môn) ------------------- */
@@ -971,7 +974,10 @@ function viewAnalytics(){
     + statCard(String(overdue),"Deadline quá hạn")
     + statCard(fmtMins(weekMins/daysIn).replace(/([a-z])/g,'<small>$1</small>'),"Trung bình mỗi ngày")
   + '</div>'
-  + (insight?'<div class="card card-pad"><div class="eyebrow" style="margin-bottom:10px">Nhận xét nhanh</div>'+insight+'</div>':'')
+  + '<div class="grid g2">'
+    + (insight?'<div class="card card-pad"><div class="eyebrow" style="margin-bottom:10px">Nhận xét nhanh</div>'+insight+'</div>':'')
+    + streakCard()
+  + '</div>'
   + '<div class="grid g2">'
     + '<div class="card"><div class="card-head"><h3>Thời gian học theo môn</h3></div><div class="card-pad">'
       + (bySub||'<span class="muted">Chưa có phiên học nào.</span>')+'</div></div>'

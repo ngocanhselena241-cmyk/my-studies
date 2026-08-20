@@ -414,6 +414,21 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .md hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 .md a{color:var(--accent)}
 
+/* khối "cần làm" trên dashboard: phần ưu tiên (nền tối) và phần deadline
+   còn lại nằm chung một thẻ, để cùng một assessment không bị kể hai lần */
+.todo{overflow:hidden;padding:0}
+.todo .focus{border-radius:0;margin:0}
+.todo .card-head{padding-top:15px}
+
+.addrow{
+  width:100%;padding:11px;border:1px dashed var(--line);border-radius:var(--r);
+  background:none;color:var(--ink3);font-size:13.5px;
+}
+.addrow:hover{border-color:var(--ink3);color:var(--ink2);background:var(--surface2)}
+.grid.top{align-items:start}
+.weakrow{width:100%;background:none;border:0;padding:7px 0;text-align:left;border-radius:6px}
+.weakrow:hover{background:var(--surface2)}
+
 /* ---------- ảnh trong ghi chú ---------- */
 .md-img{
   display:block;max-width:100%;height:auto;margin:4px 0 13px;
