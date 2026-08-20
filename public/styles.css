@@ -335,3 +335,151 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 }
 .authfoot-note{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--ink3)}
 .btn[disabled]{opacity:.55;cursor:default}
+
+/* ================= TÍNH NĂNG MỞ RỘNG ================= */
+
+/* chấm tròn trạng thái */
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+
+/* chip bật/tắt */
+.chip{
+  font-family:var(--mono);font-size:11px;letter-spacing:.03em;
+  padding:5px 10px;border-radius:20px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink3);white-space:nowrap;
+}
+.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip.on{background:var(--accent-soft);border-color:transparent;color:var(--accent-deep);font-weight:500}
+
+/* sao đánh giá mức nhớ */
+.star{background:none;border:0;padding:0 1px;font-size:16px;line-height:1;color:var(--line)}
+.star:hover{color:var(--warn)}
+.star.on{color:var(--warn)}
+
+/* điểm từng assignment trên thẻ môn */
+.marks{margin-top:12px;border-top:1px solid var(--line2);padding-top:8px}
+.markrow{display:flex;align-items:center;gap:8px;padding:2px 0}
+.markname{flex:1;font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.markval{font-size:12.5px;font-weight:600}
+.markw{font-size:10.5px;color:var(--ink3);min-width:52px;text-align:right}
+
+/* chuỗi ngày học */
+.daydots{display:flex;gap:5px;margin-top:12px}
+.daydot{
+  flex:1;text-align:center;font-family:var(--mono);font-size:9.5px;padding:5px 0;
+  border-radius:5px;background:var(--line2);color:var(--ink3);
+}
+.daydot.on{background:var(--accent);color:#fff;font-weight:600}
+
+/* hàng chủ đề */
+.topicrow{padding:12px 0;border-bottom:1px solid var(--line2)}
+.topicrow:last-child{border-bottom:0}
+.topicname{font-size:14.5px;font-weight:500}
+.topicmini{width:100%;background:none;border:0;padding:7px 0;text-align:left;border-bottom:1px solid var(--line2)}
+.topicmini:last-child{border-bottom:0}
+.topicmini:hover{background:var(--surface2)}
+
+/* bố cục hai cột cho ghi chú */
+.split{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}
+.split-side{display:flex;flex-direction:column;gap:7px}
+.notecard{
+  width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);
+  border-radius:9px;padding:10px 12px;
+}
+.notecard:hover{border-color:var(--ink3)}
+.notecard.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.notetitle{display:block;font-size:13.5px;font-weight:500;line-height:1.35}
+@media (max-width:720px){ .split{grid-template-columns:1fr} }
+
+/* nội dung markdown */
+.md{font-size:14.5px;line-height:1.65}
+.md h3{font-size:18px;margin:18px 0 8px;letter-spacing:-.015em}
+.md h4{font-size:15.5px;margin:16px 0 6px}
+.md h5,.md h6{font-size:14px;margin:14px 0 6px;color:var(--ink2)}
+.md p{margin:0 0 11px}
+.md ul,.md ol{margin:0 0 11px;padding-left:22px}
+.md li{margin:3px 0}
+.md code{
+  font-family:var(--mono);font-size:12.5px;background:var(--surface2);
+  padding:1px 5px;border-radius:4px;border:1px solid var(--line2);
+}
+.md pre{
+  font-family:var(--mono);font-size:12.5px;background:var(--surface2);
+  padding:12px 14px;border-radius:8px;overflow-x:auto;border:1px solid var(--line2);
+  white-space:pre-wrap;margin:0 0 11px;
+}
+.md pre code{background:none;border:0;padding:0}
+.md blockquote{
+  margin:0 0 11px;padding:2px 0 2px 14px;border-left:3px solid var(--line);color:var(--ink2);
+}
+.md hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.md a{color:var(--accent)}
+
+/* thư viện */
+.libitem{padding:11px 0;border-bottom:1px solid var(--line2)}
+.libitem:last-child{border-bottom:0}
+.libtitle{font-size:14.5px;font-weight:500}
+.libbody{margin-top:6px;font-size:13.5px;color:var(--ink2)}
+.formula{
+  font-family:var(--mono);font-size:14px;background:var(--surface2);
+  border:1px solid var(--line2);border-radius:8px;padding:11px 13px;margin-top:8px;
+  white-space:pre-wrap;overflow-x:auto;
+}
+
+/* tài liệu */
+.resrow{padding:9px 0;border-bottom:1px solid var(--line2)}
+.resrow:last-child{border-bottom:0}
+.resicon{font-size:16px;flex:none}
+.resname{display:block;font-size:14px;font-weight:500}
+.resopen{font-family:var(--mono);font-size:11.5px;text-decoration:none;white-space:nowrap}
+
+/* lịch: kiểu tuần và ngày */
+.cal-day.tall{min-height:150px;align-content:start}
+button.cal-day{text-align:left;border:0;font:inherit;color:inherit;display:block}
+button.cal-day:hover{background:var(--surface2)}
+.ev.review{background:var(--accent-soft);color:var(--accent-deep)}
+.ev.study{background:#eceef0;color:var(--ink2)}
+.evfull{white-space:normal;padding:4px 6px;margin-top:4px}
+.dayrow{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line2)}
+.dayrow:last-child{border-bottom:0}
+.daytime{font-size:12px;color:var(--ink3);min-width:44px}
+.daybar{width:3px;align-self:stretch;border-radius:2px;flex:none}
+.dayrow .ev{flex:1;margin-top:0;font-size:13px}
+
+/* biểu đồ mục tiêu */
+.cols.withgoal{position:relative}
+.goalline{
+  position:absolute;left:0;right:0;border-top:1px dashed var(--ink3);pointer-events:none;
+}
+.goalline span{
+  position:absolute;right:0;top:-15px;font-size:9.5px;color:var(--ink3);
+  background:var(--surface);padding:0 4px;
+}
+
+/* nhận xét nhanh */
+.insight{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px}
+.ipill{
+  font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 8px;border-radius:20px;white-space:nowrap;
+}
+
+/* chế độ ôn thi */
+.examhero{
+  background:var(--ink);border-radius:var(--r);padding:22px;color:#fff;
+  border-left:4px solid var(--sc,var(--accent));
+}
+.examhero .stat-l{color:#8f9dab}
+
+/* trợ lý */
+.planrow{display:flex;align-items:stretch;gap:11px;padding:11px 0;border-bottom:1px solid var(--line2)}
+.planrow:last-child{border-bottom:0}
+.planmin{font-size:12.5px;font-weight:600;min-width:52px;padding-top:3px;color:var(--ink2)}
+.planbar{width:3px;border-radius:2px;flex:none}
+.planbody{flex:1;background:none;border:0;text-align:left;padding:0;min-width:0}
+.plantitle{display:block;font-size:14.5px;font-weight:500;margin-bottom:2px}
+.planday{padding:10px 0;border-bottom:1px solid var(--line2)}
+.planday:last-child{border-bottom:0}
+.planlist{max-height:52vh;overflow-y:auto}
+
+/* hàng chọn môn khi bấm giờ */
+.pickrow{padding:10px 0;border-bottom:1px solid var(--line2)}
+.pickrow:last-child{border-bottom:0}

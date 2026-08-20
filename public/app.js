@@ -179,6 +179,7 @@ function migrate(d){
   if(!d.view.openWeeks) d.view.openWeeks = {};
   if(!d.view.subTab) d.view.subTab = "overview";
   if(!d.view.tab) d.view.tab = "dash";
+  if(typeof migrateExtra === "function") migrateExtra(d);
   for(i=0;i<d.subjects.length;i++){
     var s = d.subjects[i];
     if(!s.weeks || !s.weeks.length) s.weeks = makeWeeks(d.semester.weeks||13);
@@ -355,6 +356,8 @@ function render(){
       v.tab==="dash"      ? viewDash()
     : v.tab==="subject"   ? viewSubject()
     : v.tab==="calendar"  ? viewCalendar()
+    : v.tab==="exam"      ? viewExam()
+    : v.tab==="assist"    ? viewAssist()
     : v.tab==="analytics" ? viewAnalytics()
     : viewSettings();
   $("root").innerHTML = '<div class="app">'+topbar()+body+'</div>';
@@ -369,6 +372,8 @@ function topbar(){
            (v.tab==="subject"&&v.subjectId===s.id?"on":"")+'">'+esc(s.code)+'</button>';
   }
   nav += '<button data-act="go" data-tab="calendar" class="'+(v.tab==="calendar"?"on":"")+'">Lịch</button>'
+       + '<button data-act="go" data-tab="exam" class="'+(v.tab==="exam"?"on":"")+'">Ôn thi</button>'
+       + '<button data-act="go" data-tab="assist" class="'+(v.tab==="assist"?"on":"")+'">Trợ lý</button>'
        + '<button data-act="go" data-tab="analytics" class="'+(v.tab==="analytics"?"on":"")+'">Phân tích</button>'
        + '<button data-act="go" data-tab="settings" class="'+(v.tab==="settings"?"on":"")+'">Cài đặt</button>';
 
@@ -416,6 +421,7 @@ function spine(){
 }
 
 function timerWidget(){
+  if(S.pomo) return pomoWidget();
   if(!S.timer){
     return '<button class="btn sm" data-act="pickTimer">▶ Bắt đầu học</button>';
   }
@@ -459,10 +465,11 @@ function viewDash(){
   out += '</div>';
 
   /* --- Deadline sắp tới --- */
+  var range = S.view.dlRange||30;
   var dl = allDeadlines(), rows='', shown=0;
   for(var m=0;m<dl.length;m++){
     var n = daysLeft(dl[m].a.due);
-    if(n>30) continue;
+    if(n>range) continue;
     var c = countdown(dl[m].a.due);
     var p = assProg(dl[m].a);
     rows += '<button class="dl" data-act="openAssess" data-sid="'+dl[m].s.id+'" data-aid="'+dl[m].a.id+'">'
@@ -473,13 +480,18 @@ function viewDash(){
       + '</button>';
     shown++;
   }
-  out += '<div class="card"><div class="card-head"><h3>Deadline 30 ngày tới</h3>'
-       + '<span class="eyebrow">'+shown+' mục</span></div>'
-       + (rows || '<div class="card-pad muted" style="font-size:14px">Không có deadline nào trong 30 ngày tới.</div>')
+  var rangeBtns='';
+  [7,14,30].forEach(function(r){
+    rangeBtns += '<button class="btn sm '+(range===r?"pri":"")+'" data-act="dlRange" data-n="'+r+'">'+r+' ngày</button>';
+  });
+  out += '<div class="card"><div class="card-head"><h3>Deadline sắp tới</h3>'
+       + '<div class="row" style="gap:5px">'+rangeBtns+'</div></div>'
+       + (rows || '<div class="card-pad muted" style="font-size:14px">Không có deadline nào trong '+range+' ngày tới.</div>')
        + '</div>';
 
   /* --- Tuần này --- */
   out += thisWeekCard();
+  out += dashExtras();
 
   out += '</div>';
   return out;
@@ -503,6 +515,7 @@ function subjectCard(s){
       + '<div><div class="stat-n">'+p.done+'<span class="muted" style="font-size:13px">/'+p.total+'</span></div><div class="stat-l">Việc xong</div></div>'
     + '</div>'
     + '<div class="bar" style="margin-top:13px"><i style="width:'+p.pct+'%"></i></div>'
+    + cardMarks(s)
     + '<div class="dl-meta" style="margin-top:10px">'+nextTxt+'</div>'
   + '</button>';
 }
@@ -540,12 +553,15 @@ function viewSubject(){
   var s = subj(S.view.subjectId);
   if(!s){ S.view.tab="dash"; return viewDash(); }
   var st = S.view.subTab||"overview";
-  var tabs = [["overview","Tổng quan"],["weekly","Theo tuần"],["assess","Assessment"],["grades","Điểm"]];
+  var tabs = [["overview","Tổng quan"],["weekly","Theo tuần"],["assess","Assessment"],["grades","Điểm"],
+              ["topics","Chủ đề"],["notes","Ghi chú"],["library","Thư viện"],["resources","Tài liệu"]];
   var nav='';
   for(var i=0;i<tabs.length;i++){
     nav += '<button data-act="subTab" data-sub="'+tabs[i][0]+'" class="'+(st===tabs[i][0]?"on":"")+'">'+tabs[i][1]+'</button>';
   }
-  var body = st==="weekly" ? subWeekly(s) : st==="assess" ? subAssess(s) : st==="grades" ? subGrades(s) : subOverview(s);
+  var body = st==="weekly" ? subWeekly(s) : st==="assess" ? subAssess(s) : st==="grades" ? subGrades(s)
+           : st==="topics" ? subTopics(s) : st==="notes" ? subNotes(s)
+           : st==="library" ? subLibrary(s) : st==="resources" ? subResources(s) : subOverview(s);
   return '<div class="stack">'
     + '<div class="spread wrap" style="gap:10px">'
       + '<div><div class="row" style="gap:10px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.color+';display:inline-block"></span>'
@@ -589,6 +605,8 @@ function subOverview(s){
     + stat(p.pct+'<small>%</small>',"Tiến độ môn")
     + stat(weeksDone+'<small>/'+s.weeks.length+'</small>',"Tuần hoàn tất")
     + stat(fmtMins(mins).replace(/([a-z])/g,'<small>$1</small>'),"Thời gian học")
+    + stat((attendance(s)?attendance(s).pct+'<small>%</small>':'—'),"Điểm danh")
+    + stat((s.topics.length?topicStats(s).mastery+'<small>%</small>':'—'),"Chủ đề nắm vững")
   + '</div>'
   + '<div class="grid g2">'
     + '<div class="card"><div class="card-head"><h3>Assessment tiếp theo</h3></div><div class="card-pad">'
@@ -634,7 +652,7 @@ function subWeekly(s){
         + '<span class="bar wk-bar" style="--sc:'+s.color+'"><i style="width:'+wp.pct+'%"></i></span>'
         + '<span class="wk-pct">'+wp.pct+'%</span>'
       + '</button>'
-      + (open ? '<div class="wk-body">'+items
+      + (open ? '<div class="wk-body">'+attendRow(s,w)+items
           + '<div class="row wrap" style="gap:7px;margin-top:12px">'
           + '<button class="btn sm" data-act="addTask" data-sid="'+s.id+'" data-wk="'+w.n+'">+ Thêm việc</button>'
           + '<button class="btn sm ghost" data-act="editTopic" data-sid="'+s.id+'" data-wk="'+w.n+'">Đổi chủ đề</button>'
@@ -757,130 +775,7 @@ function subGrades(s){
   + '</div></div></div>';
 }
 
-/* ---------- 9. LỊCH ------------------------------------------------------- */
-function calEvents(){
-  var ev={}, i, j, n;
-  function push(dstr,o){ (ev[dstr]=ev[dstr]||[]).push(o); }
-  for(i=0;i<S.subjects.length;i++){
-    var s=S.subjects[i];
-    for(j=0;j<s.assessments.length;j++){
-      var a=s.assessments[j];
-      if(!a.due) continue;
-      push(a.due,{cls:/exam/i.test(a.type||"")?"exam":"due", txt:s.code+" · "+a.name, sid:s.id, aid:a.id, color:s.color});
-    }
-    if(semStart()){
-      for(n=1;n<=S.semester.weeks;n++){
-        var ws=weekStart(n);
-        for(var c=0;c<(s.classes||[]).length;c++){
-          var cl=s.classes[c];
-          push(iso(addDays(ws,+cl.day||0)),{cls:"", txt:s.code+" "+cl.type+(cl.start?" "+cl.start:""), sid:s.id, color:s.color});
-        }
-      }
-    }
-  }
-  return ev;
-}
-function viewCalendar(){
-  var ev=calEvents();
-  var m=parseD(S.view.calMonth)||new Date();
-  var first=new Date(m.getFullYear(),m.getMonth(),1);
-  var start=mondayOf(first);
-  var cells='', t=iso(today());
-  for(var i=0;i<7;i++) cells += '<div class="cal-dow">'+DOW_SHORT[i]+'</div>';
-  for(var k=0;k<42;k++){
-    var d=addDays(start,k), ds=iso(d);
-    var out = d.getMonth()!==m.getMonth();
-    var list=ev[ds]||[], html='';
-    for(var e=0;e<list.length && e<4;e++){
-      html += '<button class="ev '+list[e].cls+'" style="--ec:'+list[e].color+'" '
-            + (list[e].aid?'data-act="openAssess" data-sid="'+list[e].sid+'" data-aid="'+list[e].aid+'"':'data-act="go" data-tab="subject" data-sid="'+list[e].sid+'"')
-            + '>'+esc(list[e].txt)+'</button>';
-    }
-    if(list.length>4) html += '<div class="dl-meta" style="font-size:10px;margin-top:2px">+'+(list.length-4)+' nữa</div>';
-    cells += '<div class="cal-day '+(out?"out":"")+' '+(ds===t?"today":"")+'">'
-           + '<div class="cal-num">'+d.getDate()+'</div>'+html+'</div>';
-  }
-  return '<div class="stack">'
-   + '<div class="spread wrap">'
-     + '<h2 style="font-size:19px">'+MONTHS[m.getMonth()]+' '+m.getFullYear()+'</h2>'
-     + '<div class="row" style="gap:7px">'
-       + '<button class="btn sm" data-act="calMove" data-n="-1">← Trước</button>'
-       + '<button class="btn sm" data-act="calMove" data-n="0">Hôm nay</button>'
-       + '<button class="btn sm" data-act="calMove" data-n="1">Sau →</button>'
-     + '</div></div>'
-   + '<div class="cal">'+cells+'</div>'
-   + '<div class="row wrap" style="gap:14px"><span class="eyebrow">Chú thích</span>'
-     + '<span class="pill vio">Hạn nộp</span><span class="pill" style="background:#f7e3e1;color:var(--urgent);border-color:transparent">Exam</span>'
-     + '<span class="pill">Lecture / Tutorial</span></div>'
-   + (semStart()?'':'<div class="center-empty">Chưa đặt ngày bắt đầu học kỳ nên lịch lecture/tutorial chưa hiện. Vào Cài đặt để nhập.</div>')
-   + '</div>';
-}
-
-/* ---------- 10. PHÂN TÍCH ------------------------------------------------- */
-function viewAnalytics(){
-  if(!S.subjects.length) return '<div class="center-empty">Chưa có dữ liệu để phân tích.</div>';
-  var i, done=0, tot=0, overdue=0;
-  for(i=0;i<S.subjects.length;i++){ var p=subjProg(S.subjects[i]); done+=p.done; tot+=p.total; }
-  var dl=allDeadlines();
-  for(i=0;i<dl.length;i++) if(daysLeft(dl[i].a.due)<0) overdue++;
-
-  var wkStart=mondayOf(today());
-  var weekMins=studyMinutes(function(x){ var d=parseD(x.date); return d && d>=wkStart; });
-
-  /* thời gian học theo môn */
-  var bySub='', maxM=1;
-  for(i=0;i<S.subjects.length;i++){
-    var mm=studyMinutes((function(id){return function(x){return x.subjectId===id;};})(S.subjects[i].id));
-    if(mm>maxM) maxM=mm;
-  }
-  for(i=0;i<S.subjects.length;i++){
-    var s=S.subjects[i];
-    var m2=studyMinutes((function(id){return function(x){return x.subjectId===id;};})(s.id));
-    bySub += '<div class="hbar"><span class="hbar-l">'+esc(s.code)+'</span>'
-      + '<span class="hbar-t" style="--hc:'+s.color+'"><i style="width:'+(m2/maxM*100)+'%"></i></span>'
-      + '<span class="hbar-v">'+fmtMins(m2)+'</span></div>';
-  }
-  /* tiến độ theo môn */
-  var progBars='';
-  for(i=0;i<S.subjects.length;i++){
-    var s3=S.subjects[i], p3=subjProg(s3);
-    progBars += '<div class="hbar"><span class="hbar-l">'+esc(s3.code)+'</span>'
-      + '<span class="hbar-t" style="--hc:'+s3.color+'"><i style="width:'+p3.pct+'%"></i></span>'
-      + '<span class="hbar-v">'+p3.pct+'%</span></div>';
-  }
-  /* 8 tuần gần nhất */
-  var cols='', maxW=1, arr=[];
-  for(i=7;i>=0;i--){
-    var ws=addDays(wkStart,-7*i), we=addDays(ws,7);
-    var mv=studyMinutes((function(a,b){return function(x){var d=parseD(x.date); return d&&d>=a&&d<b;};})(ws,we));
-    arr.push({m:mv,label:fmtDate(ws)});
-    if(mv>maxW) maxW=mv;
-  }
-  for(i=0;i<arr.length;i++){
-    cols += '<div class="col" title="'+fmtMins(arr[i].m)+'"><i style="height:'+(arr[i].m/maxW*100)+'%"></i>'
-          + '<span>'+arr[i].label.split(" ")[0]+'</span></div>';
-  }
-
-  var stat=function(n,l){ return '<div class="card card-pad"><div class="bignum">'+n+'</div><div class="stat-l" style="margin-top:6px">'+l+'</div></div>'; };
-
-  return '<div class="stack">'
-  + '<div class="grid g4">'
-    + stat(pct(done,tot)+'<small>%</small>',"Hoàn thành cả kỳ")
-    + stat(done+'<small>/'+tot+'</small>',"Việc đã xong")
-    + stat(String(overdue),"Deadline quá hạn")
-    + stat(fmtMins(weekMins).replace(/([a-z])/g,'<small>$1</small>'),"Học trong tuần này")
-  + '</div>'
-  + '<div class="grid g2">'
-    + '<div class="card"><div class="card-head"><h3>Thời gian học theo môn</h3></div><div class="card-pad">'
-      + (bySub||'<span class="muted">Chưa có phiên học nào.</span>')
-      + '<div class="dl-meta" style="margin-top:10px">Bấm “Bắt đầu học” trên thanh trên cùng để tính giờ.</div></div></div>'
-    + '<div class="card"><div class="card-head"><h3>Tiến độ theo môn</h3></div><div class="card-pad">'+progBars+'</div></div>'
-  + '</div>'
-  + '<div class="card"><div class="card-head"><h3>Giờ học 8 tuần gần nhất</h3>'
-    + '<span class="eyebrow">cao nhất '+fmtMins(maxW)+'</span></div>'
-    + '<div class="card-pad"><div class="cols">'+cols+'</div></div></div>'
-  + '</div>';
-}
+/* Lịch và Phân tích được định nghĩa trong features.js */
 
 /* ---------- 11. CÀI ĐẶT --------------------------------------------------- */
 function viewSettings(){
@@ -919,6 +814,7 @@ function viewSettings(){
 
   return '<div class="stack">'
   + acct
+  + settingsExtras()
   + '<div class="card"><div class="card-head"><h3>Học kỳ</h3>'
     + '<button class="btn sm" data-act="editSem">Sửa</button></div><div class="card-pad">'
     + '<div class="spread" style="padding:6px 0"><span class="muted">Tên</span><span class="mono">'+esc(S.semester.name)+'</span></div>'
@@ -1046,13 +942,22 @@ function modalPeekWeek(n){
 }
 
 function modalPickTimer(){
-  var b='';
+  var rows='';
   for(var i=0;i<S.subjects.length;i++){
     var s=S.subjects[i];
-    b += '<button class="btn" style="width:100%;text-align:left;margin-bottom:7px" data-act="startTimer" data-sid="'+s.id+'">'
-      + '<span class="mono" style="color:'+s.color+';font-weight:600">'+esc(s.code)+'</span> '+esc(s.name||"")+'</button>';
+    rows += '<div class="spread pickrow">'
+      + '<span class="row" style="gap:9px"><span class="dot" style="background:'+s.color+'"></span>'
+      + '<span><span class="mono" style="font-weight:600">'+esc(s.code)+'</span>'
+      + '<span class="dl-meta">'+esc(s.name||"")+'</span></span></span>'
+      + '<span class="row" style="gap:6px">'
+      + '<button class="btn sm" data-act="startTimer" data-sid="'+s.id+'">Bấm giờ tự do</button>'
+      + '<button class="btn sm acc" data-act="pomoStart" data-sid="'+s.id+'">Pomodoro '+S.settings.focusMin+'′</button>'
+      + '</span></div>';
   }
-  openModal("Học môn nào?", b||'<div class="muted">Thêm môn học trước đã.</div>');
+  openModal("Học môn nào?",
+    (rows||'<div class="muted">Thêm môn học trước đã.</div>')
+    + '<p class="muted" style="font-size:12.5px;margin:14px 0 0">Bấm giờ tự do chạy tới khi bạn dừng. '
+    + 'Pomodoro chạy '+S.settings.focusMin+' phút tập trung rồi tự chuyển sang '+S.settings.breakMin+' phút nghỉ.</p>');
 }
 
 /* ---------- 13. THAO TÁC -------------------------------------------------- */
@@ -1094,6 +999,7 @@ var ACT = {
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk){
       var t=s.weeks[i].tasks[+el.dataset.ti]; t.done=!t.done;
+      if(t.done) awardXP(10,true);
     }
   },
   delTask:function(el){
@@ -1124,6 +1030,7 @@ var ACT = {
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){
       var t=s.assessments[i].subtasks[+el.dataset.ti]; t.done=!t.done;
+      if(t.done) awardXP(15,true);
     }
   },
   delSub:function(el){
@@ -1163,7 +1070,8 @@ var ACT = {
       S.subjects.push({
         id:uid(), code:code, name:val("f_name"), lecturer:val("f_lec"), tutor:val("f_tut"),
         color:PALETTE[S.subjects.length%PALETTE.length], classes:classes,
-        weeks:makeWeeks(S.semester.weeks), assessments:[], target:75
+        weeks:makeWeeks(S.semester.weeks), assessments:[], target:75,
+        topics:[], notes:[], library:[], resources:[], examList:null
       });
       toast("Đã thêm "+code);
     }
@@ -1214,7 +1122,10 @@ var ACT = {
   stopTimer:function(){
     if(!S.timer) return;
     var mins=(Date.now()-S.timer.startedAt)/60000;
-    if(mins>=0.5) S.sessions.push({id:uid(),subjectId:S.timer.subjectId,date:iso(today()),minutes:mins});
+    if(mins>=0.5){
+      S.sessions.push({id:uid(),subjectId:S.timer.subjectId,date:iso(today()),minutes:mins});
+      logMinutes(mins); awardXP(Math.max(5,Math.round(mins/10)*5));
+    }
     S.timer=null;
     toast("Đã lưu "+fmtMins(mins));
   },
@@ -1249,7 +1160,9 @@ var ACT = {
   },
   reset:function(){
     if(!confirm("Xoá sạch mọi thứ và bắt đầu lại? Không khôi phục được.")) return "skip";
-    S=blankState(); S.view.calMonth=iso(new Date(today().getFullYear(),today().getMonth(),1));
+    S=blankState();
+    if(typeof migrateExtra==="function") migrateExtra(S);
+    S.view.calMonth=iso(new Date(today().getFullYear(),today().getMonth(),1));
     toast("Đã xoá sạch");
   },
   closeModal:function(){ closeModal(); return "skip"; },
@@ -1351,6 +1264,57 @@ function seedDemo(){
       })
     };
   });
+  /* chủ đề, ghi chú, thư viện, tài liệu cho bản demo */
+  migrateExtra(S);
+  var LIB = {
+    "CLAW2214":[["Case","Donoghue v Stevenson","**Vấn đề:** duty of care\n\n**Nguyên tắc:** neighbour principle — phải cẩn trọng với người mà mình có thể lường trước là sẽ bị ảnh hưởng."],
+                ["Case","Carlill v Carbolic Smoke Ball","Quảng cáo có thể là unilateral offer nếu đủ cụ thể và thể hiện ý định ràng buộc."],
+                ["Khái niệm","Ratio decidendi","Phần lập luận pháp lý làm nên phán quyết — chỉ phần này mới có tính ràng buộc, phần obiter dicta thì không."]],
+    "ACCT2011":[["Standard","AASB 10 — Consolidated Financial Statements","Xác định control: quyền lực, biến động lợi ích, khả năng dùng quyền lực tác động lợi ích."],
+                ["Standard","AASB 9 — Financial Instruments","Phân loại: amortised cost, FVOCI, FVTPL."],
+                ["Khái niệm","Non-controlling interest","Phần vốn chủ sở hữu của công ty con không thuộc về công ty mẹ."]],
+    "FINC2011":[["Công thức","CAPM","E(Ri) = Rf + β(Rm − Rf)"],
+                ["Công thức","NPV","NPV = Σ CFt / (1+r)^t − C0"],
+                ["Công thức","WACC","WACC = (E/V)·Re + (D/V)·Rd·(1−Tc)"]]
+  };
+  var RES = [["Slides","Lecture Slides tuần này",4],["Worksheet","Tutorial Worksheet",4],
+             ["Recording","Lecture Recording",4],["Link","Canvas",null],["Past exam","Đề thi năm ngoái",null]];
+
+  S.subjects.forEach(function(s2){
+    var conf=[5,4,4,3,2,0,0];
+    s2.topics = [];
+    for(var w=0;w<7;w++){
+      var t = newTopic(s2.weeks[w].topic, w+1);
+      if(w<4){
+        t.learned=true; t.tutorial=true;
+        t.confidence=conf[w];
+        t.level = w<2?2:1;
+        t.learnedAt = iso(addDays(today(), -(21-w*5)));
+        t.nextReview = iso(addDays(today(), w<2? 3-w : -1));
+        t.revised = w<3;
+      }
+      s2.topics.push(t);
+    }
+    (LIB[s2.code]||[]).forEach(function(L){
+      s2.library.push({id:uid(), type:L[0], title:L[1], body:L[2], week:null});
+    });
+    RES.forEach(function(R){
+      s2.resources.push({id:uid(), kind:R[0], label:R[1], url:"https://canvas.sydney.edu.au/", week:R[2]});
+    });
+    s2.notes.push({id:uid(), title:"Tóm tắt "+(s2.weeks[3].topic||"tuần 4"), kind:"Lecture", week:4,
+      body:"## "+(s2.weeks[3].topic||"Tuần 4")+"\n\n**Ý chính**\n\n- Điểm thứ nhất cần nhớ\n- Điểm thứ hai\n\n> Ghi chú của tutor: phần này hay ra thi.\n\nCòn thắc mắc: `xem lại ví dụ cuối slide`", updated:iso(today())});
+    for(var wk=0;wk<4;wk++)
+      for(var c=0;c<s2.classes.length;c++)
+        if(!(wk===3 && c===1)) s2.weeks[wk].attend[c]=true;
+  });
+
+  S.xp=0; S.activity={};
+  for(var g=13;g>=0;g--){
+    if(g===5||g===9) continue;
+    S.activity[iso(addDays(today(),-g))] = {xp:20+Math.round(Math.random()*60), tasks:1+Math.round(Math.random()*3), mins:60+Math.round(Math.random()*90)};
+  }
+  for(var kx in S.activity) S.xp += S.activity[kx].xp;
+
   S.sessions=[];
   for(var d2=0;d2<26;d2++){
     for(var k=0;k<S.subjects.length;k++){
@@ -1535,4 +1499,3 @@ document.addEventListener("keydown", function(ev){
   }
 });
 
-boot();
