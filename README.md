@@ -1,7 +1,12 @@
 # Study Tracker
 
-Web theo dõi tiến độ học tập một học kỳ: dashboard, checklist theo tuần, assessment,
-grade calculator, lịch và thống kê giờ học. Có đăng nhập, dữ liệu lưu trên Cloudflare D1.
+Web theo dõi tiến độ học tập một học kỳ. Có đăng nhập, dữ liệu lưu trên Cloudflare D1.
+
+**Tính năng:** dashboard học kỳ · trang từng môn · tracker tuần 1–13 · task & checklist ·
+assessment kèm subtask & deadline · grade calculator và what-if · lịch ngày/tuần/tháng ·
+thống kê & giờ học · chủ đề và mức nắm vững · spaced repetition · ghi chú Markdown ·
+thư viện case/công thức/khái niệm · quản lý tài liệu · chế độ ôn thi · pomodoro ·
+chuỗi ngày học và XP · trợ lý xếp lịch học.
 
 ## Cấu trúc file
 
@@ -10,7 +15,8 @@ study-tracker/
 ├── public/                  ← phần chạy trong trình duyệt
 │   ├── index.html
 │   ├── styles.css
-│   └── app.js
+│   ├── app.js               ← phần lõi: dashboard, tuần, assessment, điểm
+│   └── features.js          ← chủ đề, ghi chú, thư viện, ôn thi, pomodoro, trợ lý
 ├── functions/
 │   └── api/
 │       └── [[path]].js      ← API đăng nhập + lưu dữ liệu (chạy trên Cloudflare)
@@ -147,6 +153,10 @@ một lần ghi. Góc trên bên phải hiện trạng thái: Đang lưu… / Đ
 
 **Giới hạn gói miễn phí:** 100.000 request/ngày, D1 5GB dung lượng và 100.000 dòng
 ghi/ngày. Với vài chục người dùng thì còn rất xa mới chạm tới.
+
+**Trợ lý học tập** chạy hoàn toàn trong trình duyệt bằng bộ quy tắc ưu tiên
+(deadline × trọng số × phần việc còn lại, cộng với lịch ôn và chủ đề yếu khi gần thi).
+Không gọi API bên ngoài nên không tốn tiền và không gửi dữ liệu của bạn đi đâu.
 
 **Chưa có:** khôi phục mật khẩu khi quên, xác thực email, giới hạn số lần đăng nhập sai.
 Nếu mở cho nhiều người dùng thật thì nên bổ sung.
