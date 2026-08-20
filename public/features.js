@@ -1069,6 +1069,7 @@ function examPanel(s, a, days){
     + '<div class="card"><div class="card-head"><h3>Checklist ôn thi</h3>'
       + '<span class="mono" style="font-size:12px">'+cdone+'/'+cl.length+'</span></div><div class="card-pad">'
       + items
+      + addRow("exam", s.id)
       + '<div class="bar thin" style="margin:12px 0"><i style="width:'+pct(cdone,cl.length)+'%"></i></div>'
       + '<button class="btn sm" data-act="addExamItem" data-sid="'+s.id+'">+ Thêm việc</button>'
       + '</div></div>'
@@ -1545,8 +1546,9 @@ ACT.examCheck = function(el){
   if(cl[i].done) awardXP(20,true);
 };
 ACT.addExamItem = function(el){
-  var lab=prompt("Việc cần làm trước kỳ thi:"); if(!lab) return "skip";
-  examChecklist(subj(el.dataset.sid)).push({label:lab,done:false});
+  examChecklist(subj(el.dataset.sid));            /* dựng sẵn checklist nếu môn chưa có */
+  adding = {kind:"exam", sid:el.dataset.sid};
+  return "justRender";
 };
 ACT.delExamItem = function(el){
   examChecklist(subj(el.dataset.sid)).splice(+el.dataset.i,1);

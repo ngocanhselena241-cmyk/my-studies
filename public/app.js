@@ -644,6 +644,7 @@ function render(){
     : viewSettings();
   $("root").innerHTML = '<div class="app">'+topbar()+body+'</div>';
   hydrateImages($("root"));
+  wireAddRow();
 }
 
 function topbar(){
@@ -945,7 +946,7 @@ function subWeekly(s){
         + '<span class="bar wk-bar" style="--sc:'+s.color+'"><i style="width:'+wp.pct+'%"></i></span>'
         + '<span class="wk-pct">'+wp.pct+'%</span>'
       + '</button>'
-      + (open ? '<div class="wk-body">'+attendRow(s,w)+items
+      + (open ? '<div class="wk-body">'+attendRow(s,w)+items+addRow("task", s.id, w.n)
           + '<div class="row wrap" style="gap:7px;margin-top:12px">'
           + '<button class="btn sm" data-act="addTask" data-sid="'+s.id+'" data-wk="'+w.n+'">+ Thêm việc</button>'
           + '<button class="btn sm ghost" data-act="editTopic" data-sid="'+s.id+'" data-wk="'+w.n+'">Đổi chủ đề</button>'
@@ -990,6 +991,7 @@ function subAssess(s){
         + '<span class="mono" style="font-size:12.5px">'+p.pct+'%</span></div>'
         + '<div class="bar" style="--sc:'+s.color+';margin-bottom:12px"><i style="width:'+p.pct+'%"></i></div>'
         + subs
+        + addRow("sub", s.id, a.id)
         + '<div class="row wrap" style="gap:8px;margin-top:12px">'
           + '<button class="btn sm" data-act="addSub" data-sid="'+s.id+'" data-aid="'+a.id+'">+ Thêm bước</button>'
           + '<select class="btn sm" style="padding-right:8px" data-act="setStatus" data-sid="'+s.id+'" data-aid="'+a.id+'">'+statusOpts+'</select>'
@@ -1306,19 +1308,14 @@ var ACT = {
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk) s.weeks[i].tasks.splice(+el.dataset.ti,1);
   },
   addTask:function(el){
-    var lab=prompt("Việc cần làm:"); if(!lab) return;
-    var s=subj(el.dataset.sid);
-    for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk) s.weeks[i].tasks.push({label:lab,done:false});
+    adding = {kind:"task", sid:el.dataset.sid, wk:+el.dataset.wk};
+    return "justRender";
   },
   editTopic:function(el){
     /* cùng một cách sửa với nhấn đúp lên tên tuần */
     var span = document.querySelector('.wk-topic[data-sid="'+el.dataset.sid+'"][data-wk="'+el.dataset.wk+'"]');
-    if(span){ startInlineTopic(span); return "skip"; }
-    var s=subj(el.dataset.sid);
-    for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk){
-      var v=prompt("Chủ đề tuần "+el.dataset.wk+":", s.weeks[i].topic||"");
-      if(v!==null) s.weeks[i].topic=v;
-    }
+    if(span) startInlineTopic(span);
+    return "skip";
   },
   applyTpl:function(el){
     var s=subj(el.dataset.sid);
@@ -1341,12 +1338,8 @@ var ACT = {
       s.assessments[i].subtasks.splice(+el.dataset.ti,1);
   },
   addSub:function(el){
-    var lab=prompt("Bước cần làm:"); if(!lab) return;
-    var s=subj(el.dataset.sid);
-    for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){
-      s.assessments[i].subtasks = s.assessments[i].subtasks||[];
-      s.assessments[i].subtasks.push({label:lab,done:false});
-    }
+    adding = {kind:"sub", sid:el.dataset.sid, aid:el.dataset.aid};
+    return "justRender";
   },
   newSubject:function(){ modalSubject(null); },
   editSubject:function(el){ modalSubject(el.dataset.sid); },
@@ -1510,6 +1503,82 @@ var CHG = {
   setTpl:function(el){ S.template[+el.dataset.i] = el.value; return "noRender"; }
 };
 
+/* ---------- 13a. THÊM DÒNG NGAY TẠI CHỖ ----------------------------------
+   Thay cho hộp prompt của trình duyệt: bấm "+ Thêm …" thì hiện luôn một dòng
+   trống có sẵn con trỏ. Enter lưu rồi mở tiếp dòng mới, nên nhập một lúc
+   nhiều mục không phải bấm đi bấm lại. Esc hoặc bỏ trống là xong.
+   ------------------------------------------------------------------------ */
+var adding = null;      // {kind:"sub"|"task"|"exam", sid, aid, wk}
+
+var ADD_HINT = {
+  sub:  "Bước cần làm…",
+  task: "Việc cần làm…",
+  exam: "Việc cần làm trước kỳ thi…"
+};
+
+/* dòng nhập, chèn vào đúng danh sách đang thêm */
+function addRow(kind, sid, extra){
+  if(!adding || adding.kind!==kind || adding.sid!==sid) return '';
+  if(kind==="sub"  && adding.aid!==extra) return '';
+  if(kind==="task" && adding.wk !==extra) return '';
+  return '<div class="addline">'
+    + '<span class="box ghost"></span>'
+    + '<input id="add_in" type="text" autocomplete="off" placeholder="'+esc(ADD_HINT[kind])+'">'
+    + '<span class="addhint mono">Enter để thêm tiếp · Esc để xong</span>'
+    + '</div>';
+}
+
+function pushAddItem(label){
+  if(!adding) return false;
+  var s = subj(adding.sid), i;
+  if(!s) return false;
+  if(adding.kind==="sub"){
+    for(i=0;i<s.assessments.length;i++) if(s.assessments[i].id===adding.aid){
+      s.assessments[i].subtasks = s.assessments[i].subtasks||[];
+      s.assessments[i].subtasks.push({label:label,done:false});
+    }
+  } else if(adding.kind==="task"){
+    for(i=0;i<s.weeks.length;i++) if(s.weeks[i].n===adding.wk) s.weeks[i].tasks.push({label:label,done:false});
+  } else if(adding.kind==="exam"){
+    examChecklist(s).push({label:label,done:false});
+  }
+  return true;
+}
+
+/* gắn lại sau mỗi lần vẽ, vì render() dựng lại toàn bộ DOM */
+function wireAddRow(){
+  var inp = $("add_in");
+  if(!inp || !adding) return;
+  inp.focus();
+  var handled = false;
+  var commit = function(){
+    var v = inp.value.trim();
+    return v ? pushAddItem(v) : false;
+  };
+  inp.addEventListener("keydown", function(ev){
+    ev.stopPropagation();
+    if(ev.key==="Enter"){
+      ev.preventDefault();
+      handled = true;
+      if(commit()){ save(); render(); }      /* adding còn mở → dòng trống mới */
+      else { adding = null; render(); }
+    } else if(ev.key==="Escape"){
+      ev.preventDefault();
+      handled = true;
+      adding = null;
+      render();
+    }
+  });
+  inp.addEventListener("blur", function(){
+    if(handled) return;                       /* Enter/Esc đã xử lý rồi */
+    handled = true;
+    var ok = commit();
+    adding = null;
+    if(ok) save();
+    setTimeout(render, 0);                    /* tránh render lồng trong render */
+  });
+}
+
 /* ---------- 13b. SỬA TÊN TUẦN NGAY TẠI CHỖ ------------------------------- */
 var inlineEditing = false;
 
@@ -1568,6 +1637,7 @@ document.addEventListener("click",function(ev){
   if(!fn) return;
   ev.preventDefault();
   var r = fn(el,ev);
+  if(r==="justRender"){ render(); return; }   /* chỉ đổi giao diện, chưa có gì để lưu */
   if(r!=="skip"){ save(); render(); }
 });
 document.addEventListener("change",function(ev){
