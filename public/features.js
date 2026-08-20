@@ -1547,7 +1547,7 @@ ACT.examCheck = function(el){
 };
 ACT.addExamItem = function(el){
   examChecklist(subj(el.dataset.sid));            /* dựng sẵn checklist nếu môn chưa có */
-  adding = {kind:"exam", sid:el.dataset.sid};
+  adding = {kind:"exam", sid:el.dataset.sid, value:""};
   return "justRender";
 };
 ACT.delExamItem = function(el){

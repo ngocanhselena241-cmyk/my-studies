@@ -642,9 +642,12 @@ function render(){
     : v.tab==="assist"    ? viewAssist()
     : v.tab==="analytics" ? viewAnalytics()
     : viewSettings();
+  rendering = true;
   $("root").innerHTML = '<div class="app">'+topbar()+body+'</div>';
+  rendering = false;
   hydrateImages($("root"));
   wireAddRow();
+  wireTopicInput();
 }
 
 function topbar(){
@@ -940,9 +943,11 @@ function subWeekly(s){
     out += '<div class="wk '+(w.n===cw?"cur":"")+'">'
       + '<button class="wk-head" data-act="toggleWeek" data-sid="'+s.id+'" data-wk="'+w.n+'">'
         + '<span class="wk-n">TUẦN '+w.n+'</span>'
-        + '<span class="wk-topic" data-dbl="topic" data-sid="'+s.id+'" data-wk="'+w.n+'" '
-        + 'title="Nhấn đúp để đổi chủ đề">'
-        + (w.topic ? esc(w.topic) : '<span class="muted">Chưa đặt chủ đề</span>')+'</span>'
+        + (editingTopic && editingTopic.sid===s.id && editingTopic.wk===w.n
+            ? '<span class="wk-topic">'+topicInputHtml(w)+'</span>'
+            : '<span class="wk-topic" data-dbl="topic" data-sid="'+s.id+'" data-wk="'+w.n+'" '
+              + 'title="Nhấn đúp để đổi chủ đề">'
+              + (w.topic ? esc(w.topic) : '<span class="muted">Chưa đặt chủ đề</span>')+'</span>')
         + '<span class="bar wk-bar" style="--sc:'+s.color+'"><i style="width:'+wp.pct+'%"></i></span>'
         + '<span class="wk-pct">'+wp.pct+'%</span>'
       + '</button>'
@@ -1279,13 +1284,14 @@ function syncWeeks(s){
 
 var ACT = {
   go:function(el){
+    closeInlineEditors();
     S.view.tab = el.dataset.tab;
     if(el.dataset.sid) S.view.subjectId = el.dataset.sid;
     if(el.dataset.sub) S.view.subTab = el.dataset.sub;
     else if(el.dataset.tab==="subject" && !el.dataset.sub) S.view.subTab="overview";
     window.scrollTo(0,0);
   },
-  subTab:function(el){ S.view.subTab = el.dataset.sub; },
+  subTab:function(el){ closeInlineEditors(); S.view.subTab = el.dataset.sub; },
   peekWeek:function(el){ modalPeekWeek(+el.dataset.wk); },
   jumpWeek:function(el){
     closeModal();
@@ -1308,7 +1314,7 @@ var ACT = {
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk) s.weeks[i].tasks.splice(+el.dataset.ti,1);
   },
   addTask:function(el){
-    adding = {kind:"task", sid:el.dataset.sid, wk:+el.dataset.wk};
+    adding = {kind:"task", sid:el.dataset.sid, wk:+el.dataset.wk, value:""};
     return "justRender";
   },
   editTopic:function(el){
@@ -1338,7 +1344,7 @@ var ACT = {
       s.assessments[i].subtasks.splice(+el.dataset.ti,1);
   },
   addSub:function(el){
-    adding = {kind:"sub", sid:el.dataset.sid, aid:el.dataset.aid};
+    adding = {kind:"sub", sid:el.dataset.sid, aid:el.dataset.aid, value:""};
     return "justRender";
   },
   newSubject:function(){ modalSubject(null); },
@@ -1508,7 +1514,26 @@ var CHG = {
    trống có sẵn con trỏ. Enter lưu rồi mở tiếp dòng mới, nên nhập một lúc
    nhiều mục không phải bấm đi bấm lại. Esc hoặc bỏ trống là xong.
    ------------------------------------------------------------------------ */
-var adding = null;      // {kind:"sub"|"task"|"exam", sid, aid, wk}
+var adding = null;      // {kind:"sub"|"task"|"exam", sid, aid, wk, value}
+
+/* Bật trong lúc thay DOM. Ô nhập bị gỡ đi sẽ bắn blur, nhưng đó là do trang
+   vẽ lại chứ không phải người dùng rời ô — cứ xử lý thì chữ đang gõ dở biến
+   mất (ví dụ pomodoro hết giờ đúng lúc đang nhập). */
+var rendering = false;
+
+/* rời hẳn màn hình thì chốt nốt phần đang gõ rồi đóng */
+function closeInlineEditors(){
+  if(adding){
+    var v = (adding.value||"").trim();
+    if(v) pushAddItem(v);
+    adding = null;
+  }
+  if(editingTopic){
+    var w = weekOf(editingTopic.sid, editingTopic.wk);
+    if(w && editingTopic.value!==null) w.topic = editingTopic.value.trim();
+    editingTopic = null;
+  }
+}
 
 var ADD_HINT = {
   sub:  "Bước cần làm…",
@@ -1523,7 +1548,8 @@ function addRow(kind, sid, extra){
   if(kind==="task" && adding.wk !==extra) return '';
   return '<div class="addline">'
     + '<span class="box ghost"></span>'
-    + '<input id="add_in" type="text" autocomplete="off" placeholder="'+esc(ADD_HINT[kind])+'">'
+    + '<input id="add_in" type="text" autocomplete="off" value="'+esc(adding.value||"")+'" '
+    + 'placeholder="'+esc(ADD_HINT[kind])+'">'
     + '<span class="addhint mono">Enter để thêm tiếp · Esc để xong</span>'
     + '</div>';
 }
@@ -1550,6 +1576,8 @@ function wireAddRow(){
   var inp = $("add_in");
   if(!inp || !adding) return;
   inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+  inp.addEventListener("input", function(){ adding.value = inp.value; });
   var handled = false;
   var commit = function(){
     var v = inp.value.trim();
@@ -1557,10 +1585,14 @@ function wireAddRow(){
   };
   inp.addEventListener("keydown", function(ev){
     ev.stopPropagation();
+    /* Bộ gõ tiếng Việt / Nhật / Trung: phím này đang được dùng để chốt chữ
+       đang soạn, chưa phải Enter thật. Xử lý ở đây sẽ vừa thêm trùng một mục
+       vừa phá mất chữ đang gõ dở. Enter thật sẽ tới ngay sau đó. */
+    if(ev.isComposing || ev.keyCode===229) return;
     if(ev.key==="Enter"){
       ev.preventDefault();
       handled = true;
-      if(commit()){ save(); render(); }      /* adding còn mở → dòng trống mới */
+      if(commit()){ adding.value=""; save(); render(); }   /* adding còn mở → dòng trống mới */
       else { adding = null; render(); }
     } else if(ev.key==="Escape"){
       ev.preventDefault();
@@ -1570,6 +1602,7 @@ function wireAddRow(){
     }
   });
   inp.addEventListener("blur", function(){
+    if(rendering) return;                     /* chỉ là trang vẽ lại, không phải rời ô */
     if(handled) return;                       /* Enter/Esc đã xử lý rồi */
     handled = true;
     var ok = commit();
@@ -1580,41 +1613,63 @@ function wireAddRow(){
 }
 
 /* ---------- 13b. SỬA TÊN TUẦN NGAY TẠI CHỖ ------------------------------- */
-var inlineEditing = false;
+var editingTopic = null;      // {sid, wk, value} — value là chữ đang gõ dở
 
+function weekOf(sid, n){
+  var s = subj(sid);
+  if(!s) return null;
+  for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===n) return s.weeks[i];
+  return null;
+}
+
+/* mở ô sửa: chỉ đặt trạng thái rồi vẽ lại, đừng tự nhét thẻ input vào DOM —
+   nếu không một lần render bất kỳ (pomodoro hết giờ chẳng hạn) sẽ xoá mất */
 function startInlineTopic(span){
-  if(!span || inlineEditing) return;
-  var s = subj(span.dataset.sid), wk = +span.dataset.wk, w = null;
-  if(!s) return;
-  for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===wk) w = s.weeks[i];
-  if(!w) return;
-  inlineEditing = true;
+  if(!span || editingTopic) return;
+  if(!weekOf(span.dataset.sid, +span.dataset.wk)) return;
+  editingTopic = {sid:span.dataset.sid, wk:+span.dataset.wk, value:null};
+  render();
+}
 
-  var inp = document.createElement("input");
-  inp.type = "text";
-  inp.className = "wk-topic-in";
-  inp.value = w.topic || "";
-  inp.placeholder = "Chủ đề của tuần "+wk;
-  span.innerHTML = "";
-  span.appendChild(inp);
+function topicInputHtml(w){
+  var v = editingTopic.value!==null ? editingTopic.value : (w.topic||"");
+  return '<input id="topic_in" class="wk-topic-in" type="text" autocomplete="off" '
+       + 'value="'+esc(v)+'" placeholder="Chủ đề của tuần '+w.n+'">';
+}
+
+/* gắn lại sau mỗi lần vẽ */
+function wireTopicInput(){
+  var inp = $("topic_in");
+  if(!inp || !editingTopic) return;
+  var first = editingTopic.value===null;
   inp.focus();
-  inp.select();
+  if(first) inp.select();                 /* lần đầu mở thì bôi đen tên cũ */
+  else inp.setSelectionRange(inp.value.length, inp.value.length);
 
+  var handled = false;
   var finish = function(keep){
-    if(!inlineEditing) return;
-    inlineEditing = false;
-    if(keep) w.topic = inp.value.trim();
+    if(!editingTopic) return;
+    var w = weekOf(editingTopic.sid, editingTopic.wk);
+    if(keep && w) w.topic = inp.value.trim();
+    editingTopic = null;
     save();
     /* blur có thể nổ ngay giữa lúc render() đang thay DOM (ví dụ đang gõ dở
        mà bấm sang tab khác). Hoãn một nhịp để không gọi render lồng render. */
     setTimeout(render, 0);
   };
+  inp.addEventListener("input", function(){ editingTopic.value = inp.value; });
   inp.addEventListener("keydown", function(ev){
-    ev.stopPropagation();                       /* Esc ở đây không đóng hộp thoại khác */
-    if(ev.key==="Enter"){ ev.preventDefault(); finish(true); }
-    else if(ev.key==="Escape"){ ev.preventDefault(); finish(false); }
+    ev.stopPropagation();                 /* Esc ở đây không đóng hộp thoại khác */
+    /* Bộ gõ tiếng Việt / Nhật / Trung: phím này đang được dùng để chốt chữ
+       đang soạn, chưa phải Enter thật. Enter thật sẽ tới ngay sau đó. */
+    if(ev.isComposing || ev.keyCode===229) return;
+    if(ev.key==="Enter"){ ev.preventDefault(); handled=true; finish(true); }
+    else if(ev.key==="Escape"){ ev.preventDefault(); handled=true; finish(false); }
   });
-  inp.addEventListener("blur", function(){ finish(true); });
+  inp.addEventListener("blur", function(){
+    if(rendering) return;                     /* chỉ là trang vẽ lại, không phải rời ô */
+    if(!handled){ handled=true; finish(true); }
+  });
   /* ô nhập nằm trong nút mở/đóng tuần — chặn để bấm vào không làm gập tuần lại */
   inp.addEventListener("click", function(ev){ ev.stopPropagation(); });
 }
