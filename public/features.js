@@ -815,6 +815,8 @@ function viewCalendar(){
    + '</div>';
 }
 
+var MONTH_MAX = 4;        // số việc hiện trong một ô ngày, còn lại gộp vào "+N nữa"
+
 function calMonth(ev,m){
   var first=new Date(m.getFullYear(),m.getMonth(),1), start=mondayOf(first);
   var cells='', t=iso(today()), i, k;
@@ -822,10 +824,17 @@ function calMonth(ev,m){
   for(k=0;k<42;k++){
     var d=addDays(start,k), ds=iso(d), out=d.getMonth()!==m.getMonth();
     var list=ev[ds]||[], html='';
-    for(i=0;i<list.length && i<4;i++) html += evHTML(list[i]);
-    if(list.length>4) html += '<div class="dl-meta" style="font-size:10px;margin-top:2px">+'+(list.length-4)+' nữa</div>';
-    cells += '<button class="cal-day '+(out?"out":"")+' '+(ds===t?"today":"")+'" data-act="calPick" data-d="'+ds+'">'
-           + '<span class="cal-num">'+d.getDate()+'</span>'+html+'</button>';
+    /* evHTML(…, true) — xếp chồng và xuống dòng đầy đủ, giống hệt lịch tuần */
+    for(i=0;i<list.length && i<MONTH_MAX;i++) html += evHTML(list[i], true);
+    if(list.length>MONTH_MAX)
+      html += '<button class="cal-more" data-act="calPick" data-d="'+ds+'">+'
+            + (list.length-MONTH_MAX)+' việc nữa</button>';
+    /* Ô ngày phải là div: bên trong có các nút sự kiện, mà HTML không cho nút
+       lồng trong nút — trình duyệt sẽ tách chúng ra thành ô riêng và làm lệch
+       cả lưới. Vẫn bấm được vì bộ xử lý click chạy theo data-act. */
+    cells += '<div class="cal-day '+(out?"out":"")+' '+(ds===t?"today":"")+'" '
+           + 'data-act="calPick" data-d="'+ds+'">'
+           + '<span class="cal-num">'+d.getDate()+'</span>'+html+'</div>';
   }
   return '<div class="cal">'+cells+'</div>';
 }

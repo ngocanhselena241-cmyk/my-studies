@@ -525,8 +525,15 @@ textarea#f_nb.dropping{
 
 /* lịch: kiểu tuần và ngày */
 .cal-day.tall{min-height:150px;align-content:start}
-button.cal-day{text-align:left;border:0;font:inherit;color:inherit;display:block}
-button.cal-day:hover{background:var(--surface2)}
+.cal-day[data-act]{cursor:pointer}
+.cal-day[data-act]:hover{background:var(--surface2)}
+.cal-day.out[data-act]:hover{background:var(--line2)}
+.cal-more{
+  display:block;width:100%;text-align:left;margin-top:3px;padding:2px 5px;
+  background:none;border:0;border-radius:4px;
+  font-family:var(--mono);font-size:10px;color:var(--ink3);
+}
+.cal-more:hover{background:var(--line2);color:var(--ink2)}
 .ev.review{background:var(--accent-soft);color:var(--accent-deep)}
 .ev.study{background:#eceef0;color:var(--ink2)}
 .evfull{white-space:normal;padding:4px 6px;margin-top:4px}
