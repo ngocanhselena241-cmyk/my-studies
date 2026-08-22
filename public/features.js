@@ -32,7 +32,6 @@ function migrateExtra(d){
   if(d.settings.focusMin   === undefined) d.settings.focusMin = 25;
   if(d.settings.breakMin   === undefined) d.settings.breakMin = 5;
 
-  d.view.dlRange   = d.view.dlRange   || 30;
   d.view.calView   = d.view.calView   || "month";
   d.view.calDate   = d.view.calDate   || iso(today());
   d.view.calFilter = d.view.calFilter || "";
@@ -1414,7 +1413,6 @@ function modalExamPlan(sid){
 }
 
 /* ---------- T. THAO TÁC MỚI ---------------------------------------------- */
-ACT.dlRange   = function(el){ S.view.dlRange = +el.dataset.n; };
 ACT.calView   = function(el){ S.view.calView = el.dataset.v; };
 ACT.calFilter = function(el){ S.view.calFilter = el.dataset.sid||""; };
 ACT.calPick   = function(el){ S.view.calDate = el.dataset.d; S.view.calView = "day"; };

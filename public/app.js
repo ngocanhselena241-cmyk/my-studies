@@ -571,49 +571,6 @@ function allDeadlines(){
   return out;
 }
 /* điểm ưu tiên = độ gấp × trọng số × phần việc còn lại */
-function priorities(){
-  var out=[];
-  for(var i=0;i<S.subjects.length;i++){
-    var s=S.subjects[i];
-    for(var j=0;j<s.assessments.length;j++){
-      var a=s.assessments[j];
-      if(a.status==="Đã có điểm"||a.status==="Đã nộp") continue;
-      var n = daysLeft(a.due);
-      if(n===null) continue;
-      var p = assProg(a);
-      var remaining = 1-(p.pct/100);
-      if(remaining<=0) continue;
-      var urgency = 14/Math.max(n+1,0.5);
-      out.push({
-        s:s, a:a, days:n,
-        score: urgency*Math.max(+a.weight||1,1)*remaining,
-        why: (n<0? "Quá hạn "+(-n)+" ngày" : n===0? "Đến hạn hôm nay" : "Còn "+n+" ngày")
-             +" · "+(+a.weight||0)+"% · mới xong "+p.pct+"%"
-      });
-    }
-  }
-  // task của tuần hiện tại
-  var cw = currentWeek();
-  if(cw){
-    for(var k=0;k<S.subjects.length;k++){
-      var su=S.subjects[k];
-      for(var m=0;m<su.weeks.length;m++){
-        var w=su.weeks[m];
-        if(w.n!==cw) continue;
-        var wp=weekProg(w);
-        if(wp.total && wp.done<wp.total){
-          out.push({
-            s:su, w:w, days:0,
-            score: 12*(1-wp.pct/100),
-            why:"Tuần "+cw+" · còn "+(wp.total-wp.done)+" việc chưa xong"
-          });
-        }
-      }
-    }
-  }
-  out.sort(function(a,b){ return b.score-a.score; });
-  return out.slice(0,4);
-}
 /* thời gian học */
 function studyMinutes(filter){
   var t=0;
@@ -629,6 +586,8 @@ function mondayOf(d){
 }
 
 /* ---------- 6. KHUNG GIAO DIỆN -------------------------------------------- */
+var DASH_DEADLINES = 3;      // số deadline gần hạn nhất hiện ở trang Tổng quan
+
 var TICK = '<svg viewBox="0 0 12 12"><polyline points="2,6.5 4.8,9 10,3"/></svg>';
 
 function render(){
@@ -728,31 +687,10 @@ function viewDash(){
 
   var out = '<div class="stack">';
 
-  /* --- Cần làm: ưu tiên bây giờ + phần deadline còn lại, gộp một khối ---
-     Trước đây tách thành "Nên làm gì bây giờ" và "Deadline sắp tới", nhưng
-     cùng là một danh sách assessment nên assessment gấp nhất bị kể hai lần. */
-  var pr = priorities(), used = {}, i;
-  var items='';
-  for(i=0;i<pr.length;i++){
-    var p=pr[i];
-    if(p.a) used[p.a.id]=1;
-    var title = p.a ? p.a.name : ("Việc tuần "+p.w.n+" — "+(p.w.topic||"chưa đặt tên"));
-    items += '<button class="focus-item" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid rgba(255,255,255,.1);cursor:pointer" '
-           + 'data-act="go" data-tab="subject" data-sid="'+p.s.id+'" data-sub="'+(p.a?"assess":"weekly")+'">'
-           + '<span class="focus-rank">'+(i+1)+'</span>'
-           + '<span><span class="focus-title" style="color:#fff">'+esc(title)+'</span>'
-           + '<span class="focus-why">'+esc(p.s.code)+' · '+esc(p.why)+'</span></span>'
-           + '</button>';
-  }
-
-  var range = S.view.dlRange||30;
-  var dl = allDeadlines(), rows='';
-  for(var m=0;m<dl.length;m++){
-    if(used[dl[m].a.id]) continue;                 /* đã nằm trong phần ưu tiên rồi */
-    var n = daysLeft(dl[m].a.due);
-    if(n>range) continue;
-    var c = countdown(dl[m].a.due);
-    var ap = assProg(dl[m].a);
+  /* --- Deadline gần nhất --- */
+  var dl = allDeadlines().slice(0, DASH_DEADLINES), rows='', m;
+  for(m=0;m<dl.length;m++){
+    var c = countdown(dl[m].a.due), ap = assProg(dl[m].a);
     rows += '<button class="dl" data-act="openAssess" data-sid="'+dl[m].s.id+'" data-aid="'+dl[m].a.id+'">'
       + '<span class="dl-date"><b>'+dl[m].d.getDate()+'</b>'+MON_SHORT[dl[m].d.getMonth()]+'</span>'
       + '<span class="dl-body"><span class="dl-title">'+esc(dl[m].a.name)+'</span>'
@@ -760,17 +698,9 @@ function viewDash(){
       + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
       + '</button>';
   }
-  var rangeBtns='';
-  [7,14,30].forEach(function(r){
-    rangeBtns += '<button class="btn sm '+(range===r?"pri":"")+'" data-act="dlRange" data-n="'+r+'">'+r+' ngày</button>';
-  });
-
-  out += '<div class="card todo">'
-    + (items ? '<div class="focus"><div class="eyebrow" style="margin-bottom:6px">Ưu tiên bây giờ</div>'+items+'</div>' : '')
-    + '<div class="card-head"><h3>'+(items?"Deadline còn lại":"Deadline sắp tới")+'</h3>'
-    + '<div class="row" style="gap:5px">'+rangeBtns+'</div></div>'
-    + (rows || '<div class="card-pad muted" style="font-size:14px">'
-        + (items?'Không còn deadline nào khác trong ':'Không có deadline nào trong ')+range+' ngày tới.</div>')
+  out += '<div class="card"><div class="card-head"><h3>Deadline gần nhất</h3>'
+    + '<button class="btn sm ghost" data-act="go" data-tab="calendar">Xem tất cả</button></div>'
+    + (rows || '<div class="card-pad muted" style="font-size:14px">Không còn deadline nào chưa xong.</div>')
     + '</div>';
 
   /* --- Các môn đang học --- */
