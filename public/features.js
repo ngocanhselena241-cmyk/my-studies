@@ -1190,8 +1190,9 @@ function modalNote(sid,nid){
       + '<div class="attach-head"><span class="eyebrow">Hình ảnh</span>'
         + '<button class="btn sm" data-act="pickNoteImg">+ Chọn ảnh</button></div>'
       + '<div class="attach-grid" id="f_nimgs"></div>'
-      + '<p class="attach-hint">Kéo thả ảnh vào đây, hoặc dán ảnh (Ctrl/⌘+V) khi đang gõ nội dung. '
-      + 'Ảnh không chèn vào bài sẽ hiện thành thư viện ở cuối ghi chú.</p>'
+      + '<p class="attach-hint">Thả ảnh vào <b>ô nội dung</b> để chèn đúng chỗ đang viết. '
+      + 'Thả vào <b>khung này</b> thì chỉ đính kèm, ảnh sẽ hiện thành thư viện ở cuối ghi chú. '
+      + 'Dán ảnh (Ctrl/⌘+V) khi đang gõ cũng chèn vào chỗ con trỏ.</p>'
     + '</div>',
     '<button class="btn" data-act="closeModal">Huỷ</button>'
     + '<button class="btn acc" data-act="saveNote" data-sid="'+sid+'" data-nid="'+(nid||"")+'">Lưu</button>');
@@ -1234,6 +1235,29 @@ function paintNoteImgs(){
   if(noteDraft.busy) out += '<div class="thumb thumb-load"><span class="mono">đang xử lý…</span></div>';
   box.innerHTML = out || '<div class="attach-empty">Chưa có ảnh nào.</div>';
   hydrateImages(box);
+}
+
+/* Ảnh là một khối riêng, chèn thẳng vào giữa câu sẽ cắt đôi câu văn.
+   Nên bám vào đầu hoặc cuối dòng đang thả, tuỳ bên nào gần hơn. */
+function snapToLine(text, pos){
+  var start = text.lastIndexOf("\n", pos-1) + 1;
+  var end   = text.indexOf("\n", pos);
+  if(end < 0) end = text.length;
+  return (pos - start) <= (end - pos) ? start : end;
+}
+
+/* thả ảnh vào giữa bài thì phải biết đang thả vào chỗ nào trong đoạn văn */
+function caretPosFromPoint(ta, x, y){
+  var p, r;
+  if(document.caretPositionFromPoint){
+    p = document.caretPositionFromPoint(x, y);
+    if(p && (p.offsetNode===ta || ta.contains(p.offsetNode))) return p.offset;
+  }
+  if(document.caretRangeFromPoint){
+    r = document.caretRangeFromPoint(x, y);
+    if(r && (r.startContainer===ta || ta.contains(r.startContainer))) return r.startOffset;
+  }
+  return null;
 }
 
 function insertAtCursor(ta, text){
@@ -1616,24 +1640,48 @@ function inNoteModal(ev){
   var t = ev.target;
   return !!(noteDraft && t && t.closest && t.closest("#modal-root .modal"));
 }
+function overNoteBody(ev){
+  return !!(ev.target && ev.target.closest && ev.target.closest("#f_nb"));
+}
+function clearDragMark(){
+  var z = $("f_attach"); if(z) z.classList.remove("dragging");
+  var ta = $("f_nb");    if(ta) ta.classList.remove("dropping");
+}
 document.addEventListener("dragover", function(ev){
   if(!inNoteModal(ev)) return;
   ev.preventDefault();
   if(ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
-  var z = $("f_attach"); if(z) z.classList.add("dragging");
+  /* thả lên vùng soạn thảo thì chèn vào đúng chỗ đó, thả chỗ khác thì chỉ đính kèm */
+  var onBody = overNoteBody(ev);
+  var ta = $("f_nb"), z = $("f_attach");
+  if(ta) ta.classList.toggle("dropping", onBody);
+  if(z)  z.classList.toggle("dragging", !onBody);
 });
 document.addEventListener("dragleave", function(ev){
   if(!noteDraft) return;
   var to = ev.relatedTarget;
   if(to && to.closest && to.closest("#modal-root .modal")) return;   // vẫn còn trong hộp thoại
-  var z = $("f_attach"); if(z) z.classList.remove("dragging");
+  clearDragMark();
 });
 document.addEventListener("drop", function(ev){
   if(!inNoteModal(ev)) return;
   ev.preventDefault();
-  var z = $("f_attach"); if(z) z.classList.remove("dragging");
+  clearDragMark();
   var files = ev.dataTransfer && ev.dataTransfer.files;
-  if(files && files.length) addNoteFiles(files, false);
+  if(!files || !files.length) return;
+
+  var ta = $("f_nb");
+  if(ta && overNoteBody(ev)){
+    /* đặt con trỏ đúng vào chỗ vừa thả, rồi mới chèn ảnh vào đó */
+    var pos = caretPosFromPoint(ta, ev.clientX, ev.clientY);
+    if(pos===null) pos = ta.selectionStart;
+    pos = snapToLine(ta.value, pos);
+    ta.focus();
+    try{ ta.setSelectionRange(pos, pos); }catch(e){}
+    addNoteFiles(files, true);
+  } else {
+    addNoteFiles(files, false);
+  }
 });
 /* thả ảnh ra ngoài hộp thoại thì đừng để trình duyệt mở file, mất hết dữ liệu đang gõ */
 document.addEventListener("dragover", function(ev){
