@@ -667,6 +667,7 @@ function render(){
   var body =
       v.tab==="dash"      ? viewDash()
     : v.tab==="subject"   ? viewSubject()
+    : v.tab==="deadlines" ? viewDeadlines()
     : v.tab==="calendar"  ? viewCalendar()
     : v.tab==="exam"      ? viewExam()
     : v.tab==="assist"    ? viewAssist()
@@ -689,7 +690,8 @@ function topbar(){
     nav += '<button data-act="go" data-tab="subject" data-sid="'+s.id+'" class="code '+
            (v.tab==="subject"&&v.subjectId===s.id?"on":"")+'">'+esc(s.code)+'</button>';
   }
-  nav += '<button data-act="go" data-tab="calendar" class="'+(v.tab==="calendar"?"on":"")+'">Lịch</button>'
+  nav += '<button data-act="go" data-tab="deadlines" class="'+(v.tab==="deadlines"?"on":"")+'">Deadline</button>'
+       + '<button data-act="go" data-tab="calendar" class="'+(v.tab==="calendar"?"on":"")+'">Lịch</button>'
        + '<button data-act="go" data-tab="exam" class="'+(v.tab==="exam"?"on":"")+'">Ôn thi</button>'
        + '<button data-act="go" data-tab="assist" class="'+(v.tab==="assist"?"on":"")+'">Trợ lý</button>'
        + '<button data-act="go" data-tab="analytics" class="'+(v.tab==="analytics"?"on":"")+'">Phân tích</button>'
@@ -753,6 +755,66 @@ function timerWidget(){
   + '</div>';
 }
 
+/* ---------- 6b. DEADLINE ------------------------------------------------ */
+/* assessment và việc trong dự án nằm chung một danh sách, xếp theo ngày */
+function mergedDeadlines(){
+  var dl = allDeadlines().concat(projDeadlines());
+  dl.sort(function(x,y){ return x.d-y.d; });
+  return dl;
+}
+
+function deadlineRow(it){
+  var date = '<span class="dl-date"><b>'+it.d.getDate()+'</b>'+MON_SHORT[it.d.getMonth()]+'</span>';
+  if(it.proj){
+    var pc = countdown(it.t.due);
+    return '<div class="dl dl-plain">'+date
+      + '<span class="dl-body"><span class="dl-title">'+esc(it.t.label)+'</span>'
+      + '<span class="dl-meta">'+esc(it.proj.name||"Dự án")+'</span></span>'
+      + '<span class="cd '+pc.cls+'">'+pc.txt+'</span></div>';
+  }
+  var c = countdown(it.a.due), ap = assProg(it.a);
+  return '<button class="dl" data-act="openAssess" data-sid="'+it.s.id+'" data-aid="'+it.a.id+'">'+date
+    + '<span class="dl-body"><span class="dl-title">'+esc(it.a.name)+'</span>'
+    + '<span class="dl-meta">'+esc(it.s.code)+' · '+(+it.a.weight||0)+'% · xong '+ap.pct+'%</span></span>'
+    + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
+    + '</button>';
+}
+
+var DL_GROUPS = ["Quá hạn","Hôm nay","7 ngày tới","30 ngày tới","Xa hơn"];
+function dlGroup(d){
+  var n = Math.round((d.getTime()-today().getTime())/DAY);
+  return n<0 ? 0 : n===0 ? 1 : n<=7 ? 2 : n<=30 ? 3 : 4;
+}
+
+function viewDeadlines(){
+  var dl = mergedDeadlines();
+  if(!dl.length){
+    return '<div class="center-empty">Không còn deadline nào chưa xong. '
+         + 'Deadline lấy từ assessment của các môn và việc có hạn trong mục Dự án.</div>';
+  }
+  var buckets = [[],[],[],[],[]], i;
+  for(i=0;i<dl.length;i++) buckets[dlGroup(dl[i].d)].push(dl[i]);
+
+  var out = '', g;
+  for(g=0;g<buckets.length;g++){
+    if(!buckets[g].length) continue;
+    var rows = '';
+    for(i=0;i<buckets[g].length;i++) rows += deadlineRow(buckets[g][i]);
+    out += '<div class="card" style="margin-bottom:14px">'
+      + '<div class="card-head"><h3>'+DL_GROUPS[g]+'</h3>'
+      + '<span class="eyebrow">'+buckets[g].length+'</span></div>'
+      + rows + '</div>';
+  }
+  var nProj = 0;
+  for(i=0;i<dl.length;i++) if(dl[i].proj) nProj++;
+  return '<div>'
+    + '<div class="spread wrap" style="margin-bottom:14px;gap:9px">'
+      + '<span class="eyebrow">'+dl.length+' deadline · '+(dl.length-nProj)+' assessment · '+nProj+' việc dự án</span>'
+      + '<button class="btn sm ghost" data-act="go" data-tab="calendar">Xem trên lịch</button>'
+    + '</div>' + out
+  + '</div>';
+}
+
 /* ---------- 7. TỔNG QUAN -------------------------------------------------- */
 function viewDash(){
   if(!S.subjects.length) return emptyStart();
@@ -760,29 +822,11 @@ function viewDash(){
   var out = '<div class="stack">';
 
   /* --- Deadline gần nhất: assessment và việc dự án chung một danh sách --- */
-  var dl = allDeadlines().concat(projDeadlines());
-  dl.sort(function(x,y){ return x.d-y.d; });
-  dl = dl.slice(0, DASH_DEADLINES);
-  var rows='', m;
-  for(m=0;m<dl.length;m++){
-    var it=dl[m], date='<span class="dl-date"><b>'+it.d.getDate()+'</b>'+MON_SHORT[it.d.getMonth()]+'</span>';
-    if(it.proj){
-      var pc = countdown(it.t.due);
-      rows += '<div class="dl dl-plain">'+date
-        + '<span class="dl-body"><span class="dl-title">'+esc(it.t.label)+'</span>'
-        + '<span class="dl-meta">'+esc(it.proj.name||"Dự án")+'</span></span>'
-        + '<span class="cd '+pc.cls+'">'+pc.txt+'</span></div>';
-    } else {
-      var c = countdown(it.a.due), ap = assProg(it.a);
-      rows += '<button class="dl" data-act="openAssess" data-sid="'+it.s.id+'" data-aid="'+it.a.id+'">'+date
-        + '<span class="dl-body"><span class="dl-title">'+esc(it.a.name)+'</span>'
-        + '<span class="dl-meta">'+esc(it.s.code)+' · '+(+it.a.weight||0)+'% · xong '+ap.pct+'%</span></span>'
-        + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
-        + '</button>';
-    }
-  }
+  var all = mergedDeadlines(), dl = all.slice(0, DASH_DEADLINES), rows='', m;
+  for(m=0;m<dl.length;m++) rows += deadlineRow(dl[m]);
   out += '<div class="card"><div class="card-head"><h3>Deadline gần nhất</h3>'
-    + '<button class="btn sm ghost" data-act="go" data-tab="calendar">Xem tất cả</button></div>'
+    + '<button class="btn sm ghost" data-act="go" data-tab="deadlines">Xem tất cả'
+    + (all.length>DASH_DEADLINES ? ' ('+all.length+')' : '')+'</button></div>'
     + (rows || '<div class="card-pad muted" style="font-size:14px">Không còn deadline nào chưa xong.</div>')
     + '</div>';
 
