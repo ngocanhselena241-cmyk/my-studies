@@ -370,6 +370,15 @@ function today(){ var d=new Date(); d.setHours(0,0,0,0); return d; }
 function iso(d){
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
+/* Ô <input type="date"> coi 27/08/2 là ngày hợp lệ (năm 0002). Đừng dùng
+   parseD để kiểm tra: JavaScript quy năm hai chữ số về 1900+, nên 0002 hoá
+   thành 1902 và lọt lưới. Phải đọc thẳng chuỗi yyyy-mm-dd. */
+function cleanDate(v){
+  v = String(v||"");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return "";
+  return +v.slice(0,4) >= 1900 ? v : "";
+}
+
 function parseD(s){
   if(!s) return null;
   var p = String(s).split("-");
@@ -1415,7 +1424,7 @@ var ACT = {
   saveSem:function(){
     S.semester.name = val("f_sem")||S.semester.name;
     S.semester.weeks = clamp(+val("f_wks")||13,1,30);
-    S.semester.start = val("f_start");
+    S.semester.start = cleanDate(val("f_start"));
     for(var i=0;i<S.subjects.length;i++) syncWeeks(S.subjects[i]);
     closeModal();
   },
@@ -1427,7 +1436,7 @@ var ACT = {
     if(aid) for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===aid) a=s.assessments[i];
     if(!a){ a={id:uid(),subtasks:[]}; s.assessments.push(a); }
     a.name=val("f_an"); a.type=val("f_at"); a.weight=+val("f_aw")||0;
-    a.due=val("f_ad"); a.status=val("f_as"); a.notes=val("f_anote");
+    a.due=cleanDate(val("f_ad")); a.status=val("f_as"); a.notes=val("f_anote");
     var g=val("f_ag");
     a.grade = (g===""?null:+g);
     if(a.grade!=null && a.status!=="Đã có điểm") a.status="Đã có điểm";
@@ -1545,11 +1554,16 @@ var CHG = {
     if(pr) pr.name = el.value.trim();
     return "noRender";
   },
+  /* Ô ngày bắn change ngay khi giá trị vừa đủ hợp lệ: gõ số đầu của năm là
+     đã thành ngày hợp lệ năm 0002. Vẽ lại lúc đó sẽ thay mới ô nhập và cướp
+     mất con trỏ, không gõ tiếp được. Chỉ lưu rồi thôi — để focusout vẽ lại. */
   setPTaskDue:function(el){
     var pr = projById(el.dataset.pid);
-    if(!pr) return "noRender";
-    var t = pr.tasks[+el.dataset.ti];
-    if(t) t.due = el.value || "";
+    if(pr){
+      var t = pr.tasks[+el.dataset.ti];
+      if(t) t.due = el.value || "";
+    }
+    return "noRender";
   }
 };
 
@@ -1765,6 +1779,20 @@ document.addEventListener("change",function(ev){
   save();
   if(r!=="noRender") render();
 });
+/* rời ô chọn ngày: bỏ ngày gõ dở (năm một, hai chữ số) rồi mới vẽ lại,
+   để chip đếm ngược và danh sách deadline cập nhật theo */
+document.addEventListener("focusout", function(ev){
+  var el = ev.target.closest ? ev.target.closest('[data-act="setPTaskDue"]') : null;
+  if(!el) return;
+  var pr = projById(el.dataset.pid);
+  if(pr){
+    var t = pr.tasks[+el.dataset.ti];
+    if(t && t.due && !cleanDate(t.due)){ t.due = ""; el.value = ""; }
+  }
+  save();
+  setTimeout(render, 0);
+});
+
 document.addEventListener("keydown",function(ev){ if(ev.key==="Escape") closeModal(); });
 
 /* đồng hồ chạy trên thanh trên cùng */
