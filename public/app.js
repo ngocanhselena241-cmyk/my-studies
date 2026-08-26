@@ -585,6 +585,68 @@ function mondayOf(d){
   var x=new Date(d.getTime()); var w=(x.getDay()+6)%7; return addDays(x,-w);
 }
 
+/* ---------- 5b. DỰ ÁN / VIỆC KHÔNG THUỘC MÔN NÀO --------------------------
+   Việc cần làm không gắn với môn học: gom theo dự án, mỗi việc có thể đặt
+   hạn chót (không bắt buộc). Việc có hạn sẽ lên chung danh sách deadline ở
+   trang Tổng quan.
+   ------------------------------------------------------------------------ */
+function projById(id){
+  var ps = S.projects||[];
+  for(var i=0;i<ps.length;i++) if(ps[i].id===id) return ps[i];
+  return null;
+}
+/* việc còn phải làm và có hạn, để trộn vào danh sách deadline */
+function projDeadlines(){
+  var out=[], ps=S.projects||[], i, j;
+  for(i=0;i<ps.length;i++){
+    for(j=0;j<(ps[i].tasks||[]).length;j++){
+      var t=ps[i].tasks[j];
+      if(t.done || !t.due) continue;
+      var d=parseD(t.due);
+      if(d) out.push({proj:ps[i], t:t, d:d});
+    }
+  }
+  return out;
+}
+
+function projectsCard(){
+  S.projects = S.projects || [];
+  var out='', i, j;
+  for(i=0;i<S.projects.length;i++){
+    var pr=S.projects[i], items='';
+    for(j=0;j<(pr.tasks||[]).length;j++){
+      var t=pr.tasks[j];
+      var c = (t.due && !t.done) ? countdown(t.due) : null;
+      items += '<div class="ptask">'
+        + '<button class="check '+(t.done?"on":"")+'" style="flex:1;min-width:0" '
+          + 'data-act="togglePTask" data-pid="'+pr.id+'" data-ti="'+j+'">'
+          + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(t.label)+'</span></button>'
+        + (c?'<span class="cd '+c.cls+'">'+c.txt+'</span>':'')
+        + '<input class="ptask-due" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
+          + 'data-act="setPTaskDue" data-pid="'+pr.id+'" data-ti="'+j+'">'
+        + '<button class="btn ghost sm" data-act="delPTask" data-pid="'+pr.id+'" data-ti="'+j+'" title="Xoá việc">×</button>'
+        + '</div>';
+    }
+    out += '<div class="projgroup">'
+      + '<div class="row" style="gap:6px">'
+        + '<input class="projname" type="text" value="'+esc(pr.name||"")+'" placeholder="Tên dự án…" '
+          + 'data-act="setProjName" data-pid="'+pr.id+'">'
+        + '<button class="btn ghost sm" data-act="delProj" data-pid="'+pr.id+'" title="Xoá dự án">×</button>'
+      + '</div>'
+      + items
+      + addRow("ptask", pr.id)
+      + '<button class="btn sm ghost" style="margin-top:4px" data-act="addPTask" data-pid="'+pr.id+'">+ thêm việc</button>'
+      + '</div>';
+  }
+  return '<div class="card"><div class="card-head"><h3>Dự án</h3>'
+    + '<span class="eyebrow">không thuộc môn nào</span></div>'
+    + '<div class="card-pad">'
+      + (out || '<div class="muted" style="font-size:13px;margin-bottom:10px">'
+              + 'Việc cần làm không gắn với môn học nào — deadline đặt được cho từng việc.</div>')
+      + '<button class="addrow" data-act="addProj">+ Thêm dự án</button>'
+    + '</div></div>';
+}
+
 /* ---------- 6. KHUNG GIAO DIỆN -------------------------------------------- */
 var DASH_DEADLINES = 3;      // số deadline gần hạn nhất hiện ở trang Tổng quan
 
@@ -607,6 +669,7 @@ function render(){
   hydrateImages($("root"));
   wireAddRow();
   wireTopicInput();
+  applyFocusAfterRender();
 }
 
 function topbar(){
@@ -687,16 +750,27 @@ function viewDash(){
 
   var out = '<div class="stack">';
 
-  /* --- Deadline gần nhất --- */
-  var dl = allDeadlines().slice(0, DASH_DEADLINES), rows='', m;
+  /* --- Deadline gần nhất: assessment và việc dự án chung một danh sách --- */
+  var dl = allDeadlines().concat(projDeadlines());
+  dl.sort(function(x,y){ return x.d-y.d; });
+  dl = dl.slice(0, DASH_DEADLINES);
+  var rows='', m;
   for(m=0;m<dl.length;m++){
-    var c = countdown(dl[m].a.due), ap = assProg(dl[m].a);
-    rows += '<button class="dl" data-act="openAssess" data-sid="'+dl[m].s.id+'" data-aid="'+dl[m].a.id+'">'
-      + '<span class="dl-date"><b>'+dl[m].d.getDate()+'</b>'+MON_SHORT[dl[m].d.getMonth()]+'</span>'
-      + '<span class="dl-body"><span class="dl-title">'+esc(dl[m].a.name)+'</span>'
-      + '<span class="dl-meta">'+esc(dl[m].s.code)+' · '+(+dl[m].a.weight||0)+'% · xong '+ap.pct+'%</span></span>'
-      + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
-      + '</button>';
+    var it=dl[m], date='<span class="dl-date"><b>'+it.d.getDate()+'</b>'+MON_SHORT[it.d.getMonth()]+'</span>';
+    if(it.proj){
+      var pc = countdown(it.t.due);
+      rows += '<div class="dl dl-plain">'+date
+        + '<span class="dl-body"><span class="dl-title">'+esc(it.t.label)+'</span>'
+        + '<span class="dl-meta">'+esc(it.proj.name||"Dự án")+'</span></span>'
+        + '<span class="cd '+pc.cls+'">'+pc.txt+'</span></div>';
+    } else {
+      var c = countdown(it.a.due), ap = assProg(it.a);
+      rows += '<button class="dl" data-act="openAssess" data-sid="'+it.s.id+'" data-aid="'+it.a.id+'">'+date
+        + '<span class="dl-body"><span class="dl-title">'+esc(it.a.name)+'</span>'
+        + '<span class="dl-meta">'+esc(it.s.code)+' · '+(+it.a.weight||0)+'% · xong '+ap.pct+'%</span></span>'
+        + '<span class="cd '+c.cls+'">'+c.txt+'</span>'
+        + '</button>';
+    }
   }
   out += '<div class="card"><div class="card-head"><h3>Deadline gần nhất</h3>'
     + '<button class="btn sm ghost" data-act="go" data-tab="calendar">Xem tất cả</button></div>'
@@ -712,9 +786,11 @@ function viewDash(){
   out += '<button class="addrow" data-act="newSubject">+ Thêm môn học</button>';
 
   /* --- Tuần này + chủ đề cần ôn: hai danh sách hẹp, để cạnh nhau --- */
-  var wkCard = thisWeekCard(), tpCard = dashExtras();
-  if(wkCard && tpCard) out += '<div class="grid g2 top">'+wkCard+tpCard+'</div>';
-  else out += wkCard + tpCard;
+  /* Dự án để riêng một hàng: dòng việc cần chỗ cho cả nhãn, hạn chót và nút xoá,
+     nhét vào cột hẹp là ô chọn ngày tràn ra ngoài. */
+  out += projectsCard();
+  var cards = [thisWeekCard(), dashExtras()].filter(Boolean);
+  out += cards.length>1 ? '<div class="grid g2 top">'+cards.join("")+'</div>' : cards.join("");
 
   out += '</div>';
   return out;
@@ -751,26 +827,23 @@ function thisWeekCard(){
     var s=S.subjects[i], w=null;
     for(var j=0;j<s.weeks.length;j++) if(s.weeks[j].n===cw) w=s.weeks[j];
     if(!w||!(w.tasks||[]).length) continue;
-    var wp=weekProg(w), items='', left=0;
-    /* chỉ hiện việc chưa xong — việc đã tick nằm ở tab Theo tuần */
+    any=true;
+    var wp=weekProg(w), items='';
+    /* việc đã tick vẫn ở nguyên chỗ, chỉ gạch ngang cho biết đã xong */
     for(var t=0;t<w.tasks.length;t++){
       var tk=w.tasks[t];
-      if(tk.done) continue;
-      left++;
-      items += '<button class="check" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'">'
+      items += '<button class="check '+(tk.done?"on":"")+'" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'">'
              + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(tk.label)+'</span></button>';
     }
-    if(!left) continue;
-    any=true;
     out += '<div style="padding:14px 18px;border-bottom:1px solid var(--line2)">'
          + '<div class="spread" style="margin-bottom:4px"><div class="row" style="gap:8px">'
          + '<span class="pill" style="background:'+s.color+'22;color:'+s.color+';border-color:transparent">'+esc(s.code)+'</span>'
          + '<span style="font-size:13.5px;font-weight:500">'+esc(w.topic||"")+'</span></div>'
-         + '<span class="mono" style="font-size:12px;color:var(--ink3)">còn '+left+'/'+wp.total+'</span></div>'
+         + '<span class="mono" style="font-size:12px;color:var(--ink3)">'+wp.done+'/'+wp.total+'</span></div>'
          + items + '</div>';
   }
   if(!any) return '';
-  return '<div class="card"><div class="card-head"><h3>Tuần '+cw+' — còn phải làm</h3>'
+  return '<div class="card"><div class="card-head"><h3>Tuần '+cw+' — việc cần làm</h3>'
        + '<button class="btn sm ghost" data-act="peekWeek" data-wk="'+cw+'">Xem cả tuần</button></div>'
        + out + '</div>';
 }
@@ -1277,6 +1350,36 @@ var ACT = {
     adding = {kind:"sub", sid:el.dataset.sid, aid:el.dataset.aid, value:""};
     return "justRender";
   },
+
+  /* --- dự án / việc không thuộc môn nào --- */
+  addProj:function(){
+    S.projects = S.projects||[];
+    var pr = {id:uid(), name:"", tasks:[]};
+    S.projects.push(pr);
+    focusAfterRender = '.projname[data-pid="'+pr.id+'"]';
+  },
+  delProj:function(el){
+    var pr = projById(el.dataset.pid);
+    if(!pr) return "skip";
+    if((pr.tasks||[]).length && !confirm("Xoá dự án “"+(pr.name||"chưa đặt tên")+"” cùng "+pr.tasks.length+" việc trong đó?")) return "skip";
+    S.projects = S.projects.filter(function(x){ return x.id!==el.dataset.pid; });
+  },
+  addPTask:function(el){
+    adding = {kind:"ptask", sid:el.dataset.pid, value:""};
+    return "justRender";
+  },
+  togglePTask:function(el){
+    var pr = projById(el.dataset.pid);
+    if(!pr) return "skip";
+    var t = pr.tasks[+el.dataset.ti];
+    if(!t) return "skip";
+    t.done = !t.done;
+    if(t.done) awardXP(10,true);
+  },
+  delPTask:function(el){
+    var pr = projById(el.dataset.pid);
+    if(pr) pr.tasks.splice(+el.dataset.ti,1);
+  },
   newSubject:function(){ modalSubject(null); },
   editSubject:function(el){ modalSubject(el.dataset.sid); },
   delSubject:function(el){
@@ -1436,7 +1539,18 @@ var CHG = {
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid) s.assessments[i].status=el.value;
   },
-  setTpl:function(el){ S.template[+el.dataset.i] = el.value; return "noRender"; }
+  setTpl:function(el){ S.template[+el.dataset.i] = el.value; return "noRender"; },
+  setProjName:function(el){
+    var pr = projById(el.dataset.pid);
+    if(pr) pr.name = el.value.trim();
+    return "noRender";
+  },
+  setPTaskDue:function(el){
+    var pr = projById(el.dataset.pid);
+    if(!pr) return "noRender";
+    var t = pr.tasks[+el.dataset.ti];
+    if(t) t.due = el.value || "";
+  }
 };
 
 /* ---------- 13a. THÊM DÒNG NGAY TẠI CHỖ ----------------------------------
@@ -1450,6 +1564,15 @@ var adding = null;      // {kind:"sub"|"task"|"exam", sid, aid, wk, value}
    vẽ lại chứ không phải người dùng rời ô — cứ xử lý thì chữ đang gõ dở biến
    mất (ví dụ pomodoro hết giờ đúng lúc đang nhập). */
 var rendering = false;
+
+/* css selector của ô cần đưa con trỏ vào ngay sau lần vẽ tới */
+var focusAfterRender = null;
+function applyFocusAfterRender(){
+  if(!focusAfterRender) return;
+  var el = document.querySelector(focusAfterRender);
+  focusAfterRender = null;
+  if(el){ el.focus(); if(el.select) el.select(); }
+}
 
 /* rời hẳn màn hình thì chốt nốt phần đang gõ rồi đóng */
 function closeInlineEditors(){
@@ -1466,9 +1589,10 @@ function closeInlineEditors(){
 }
 
 var ADD_HINT = {
-  sub:  "Bước cần làm…",
-  task: "Việc cần làm…",
-  exam: "Việc cần làm trước kỳ thi…"
+  sub:   "Bước cần làm…",
+  task:  "Việc cần làm…",
+  exam:  "Việc cần làm trước kỳ thi…",
+  ptask: "Việc cần làm…"
 };
 
 /* dòng nhập, chèn vào đúng danh sách đang thêm */
@@ -1486,7 +1610,14 @@ function addRow(kind, sid, extra){
 
 function pushAddItem(label){
   if(!adding) return false;
-  var s = subj(adding.sid), i;
+  var i;
+  if(adding.kind==="ptask"){
+    var pr = projById(adding.sid);
+    if(!pr) return false;
+    pr.tasks.push({label:label, done:false, due:""});
+    return true;
+  }
+  var s = subj(adding.sid);
   if(!s) return false;
   if(adding.kind==="sub"){
     for(i=0;i<s.assessments.length;i++) if(s.assessments[i].id===adding.aid){

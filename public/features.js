@@ -26,6 +26,12 @@ function migrateExtra(d){
   d.xp       = d.xp || 0;
   d.activity = d.activity || {};      // {"2026-08-20": {xp:40, tasks:3, mins:95}}
   d.pomo     = d.pomo || null;
+  d.projects = d.projects || [];      // [{id, name, tasks:[{label, done, due}]}]
+  for(var pi=0;pi<d.projects.length;pi++){
+    d.projects[pi].tasks = d.projects[pi].tasks || [];
+    for(var ti=0;ti<d.projects[pi].tasks.length;ti++)
+      if(d.projects[pi].tasks[ti].due == null) d.projects[pi].tasks[ti].due = "";
+  }
   d.settings = d.settings || {};
   if(d.settings.gamify     === undefined) d.settings.gamify = true;
   if(d.settings.weeklyGoal === undefined) d.settings.weeklyGoal = 900;  // phút/tuần
