@@ -274,7 +274,11 @@ function md(src){
   var out=[], inList=null, inCode=false, para=[];
 
   function flushPara(){
-    if(para.length){ out.push("<p>"+inline(para.join(" "))+"</p>"); para=[]; }
+    /* Markdown chuẩn nối các dòng trong cùng đoạn bằng dấu cách, nên gõ Enter
+       một lần không xuống dòng. Trong ghi chú thì Enter phải ra đúng một dòng
+       mới. Ghép bằng <br> chứ không bằng "\n", để **đậm** hay *nghiêng* viết
+       vắt qua hai dòng vẫn nhận. */
+    if(para.length){ out.push("<p>"+inline(para.join("<br>"))+"</p>"); para=[]; }
   }
   function closeList(){ if(inList){ out.push("</"+inList+">"); inList=null; } }
   function inline(t){
