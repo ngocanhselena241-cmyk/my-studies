@@ -23,6 +23,7 @@ var EXAM_CHECKLIST = [
 ];
 
 function migrateExtra(d){
+  d.semester.breaks = d.semester.breaks || [];   // ngày thứ 2 của các tuần nghỉ
   d.xp       = d.xp || 0;
   d.activity = d.activity || {};      // {"2026-08-20": {xp:40, tasks:3, mins:95}}
   d.pomo     = d.pomo || null;

@@ -83,6 +83,37 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .spine-dot{width:5px;height:5px;border-radius:50%;background:var(--violet)}
 .spine-dot.big{background:var(--urgent);width:6px;height:6px}
 .spine-wk:hover .spine-bar{background:var(--ink2)}
+/* tuần nghỉ: có chỗ trên dải nhưng không mang số, không bấm được */
+.spine-wk.brk{cursor:default;opacity:.65}
+.spine-wk.brk .spine-bar{background:repeating-linear-gradient(
+  90deg,var(--line) 0 3px,transparent 3px 6px)}
+.spine-wk.brk:hover .spine-bar{background:repeating-linear-gradient(
+  90deg,var(--line) 0 3px,transparent 3px 6px)}
+.spine-wk.brk .spine-n{color:var(--ink3)}
+
+/* danh sách tuần trong hộp thoại Học kỳ */
+.wklist{max-height:270px;overflow-y:auto;border:1px solid var(--line);border-radius:9px}
+.wkrow{
+  display:flex;align-items:center;gap:11px;width:100%;padding:8px 11px;
+  background:none;border:0;border-bottom:1px solid var(--line2);text-align:left;
+}
+.wkrow:last-of-type{border-bottom:0}
+.wkrow:hover{background:var(--surface2)}
+.wkrow-n{
+  flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--mono);font-size:11px;font-weight:600;
+  background:var(--accent-soft);color:var(--accent-deep);
+}
+.wkrow-d{flex:1;font-size:13px;color:var(--ink2)}
+.wkrow-t{font-family:var(--mono);font-size:11px;color:var(--ink3);min-width:34px;text-align:right}
+.wkrow:hover .wkrow-t:empty::after{content:"nghỉ?";color:var(--ink3);opacity:.55}
+.wkrow.brk{background:var(--surface2)}
+.wkrow.brk .wkrow-n{background:transparent;border:1px dashed var(--line);color:var(--ink3)}
+.wkrow.brk .wkrow-d{color:var(--ink3)}
+.wksum{
+  padding:8px 11px;border-top:1px solid var(--line);background:var(--surface2);
+  font-size:11px;color:var(--ink3);
+}
 
 /* ---------- nav ---------- */
 .nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;padding-top:10px}

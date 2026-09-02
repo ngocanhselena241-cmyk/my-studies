@@ -485,16 +485,72 @@ function migrate(d){
 function subj(id){ for(var i=0;i<S.subjects.length;i++) if(S.subjects[i].id===id) return S.subjects[i]; return null; }
 
 function semStart(){ return parseD(S.semester.start); }
-function weekStart(n){ var s=semStart(); return s ? addDays(s,(n-1)*7) : null; }
-function currentWeek(){
-  var s = semStart(); if(!s) return null;
-  var n = Math.floor((today().getTime()-s.getTime())/(7*DAY))+1;
-  return clamp(n,1,S.semester.weeks);
+/* ---------- ĐÁNH SỐ TUẦN ------------------------------------------------
+   Học kỳ có thể xen tuần nghỉ. Tuần nghỉ vẫn chiếm một tuần trên lịch nhưng
+   không mang số, nên tuần học sau kỳ nghỉ tiếp tục số cũ chứ không nhảy.
+   semester.breaks là danh sách ngày thứ 2 của những tuần nghỉ.
+   ------------------------------------------------------------------------ */
+function semBreakSet(){
+  var m = {}, b = S.semester.breaks || [];
+  for(var i=0;i<b.length;i++) m[b[i]] = 1;
+  return m;
+}
+/* đi qua từng tuần lịch từ đầu học kỳ, gọi fn(thứ2, sốTuầnHọc|null, chỉSốLịch);
+   dừng khi đã đủ số tuần học, hoặc khi fn trả về false */
+function eachCalWeek(fn){
+  var s = semStart(); if(!s) return;
+  var brk = semBreakSet(), total = S.semester.weeks || 13, n = 0, k = 0;
+  while(n < total && k < 200){
+    var mon = addDays(s, k*7), isBreak = !!brk[iso(mon)];
+    if(!isBreak) n++;
+    if(fn(mon, isBreak ? null : n, k) === false) return;
+    k++;
+  }
+}
+function weekStart(n){
+  var found = null;
+  eachCalWeek(function(mon, num){ if(num===n){ found = mon; return false; } });
+  return found;
 }
 function weekOfDate(d){
-  var s = semStart(); if(!s||!d) return null;
-  var n = Math.floor((d.getTime()-s.getTime())/(7*DAY))+1;
-  return (n>=1 && n<=S.semester.weeks) ? n : null;
+  if(!semStart() || !d) return null;
+  var t = mondayOf(d).getTime(), found = null;
+  eachCalWeek(function(mon, num){
+    if(mon.getTime()===t){ found = num; return false; }
+  });
+  return found;
+}
+/* hôm nay có đang rơi vào một tuần nghỉ không */
+function inBreakWeek(){
+  var s = semStart(); if(!s) return false;
+  var t = today().getTime();
+  if(t < s.getTime()) return false;
+  var yes = false;
+  eachCalWeek(function(mon, n){
+    if(t >= mon.getTime() && t <= addDays(mon,6).getTime()){ yes = (n===null); return false; }
+  });
+  return yes;
+}
+function currentWeek(){
+  var s = semStart(); if(!s) return null;
+  var t = today();
+  if(t.getTime() < s.getTime()) return 1;          /* chưa vào học kỳ */
+  var n = weekOfDate(t);
+  if(n) return n;
+  /* đã qua ngày kết thúc thì vẫn coi là tuần cuối; còn đang nghỉ thì không
+     có tuần học nào cả */
+  var last = weekStart(S.semester.weeks);
+  return (last && t.getTime() > addDays(last,6).getTime()) ? S.semester.weeks : null;
+}
+/* bỏ những tuần nghỉ nằm ngoài phạm vi học kỳ, ví dụ sau khi giảm số tuần */
+function pruneBreaks(list){
+  var keep = {}, out = [];
+  var save_ = S.semester.breaks;
+  S.semester.breaks = list;
+  eachCalWeek(function(mon, num){ if(num===null) keep[iso(mon)] = 1; });
+  S.semester.breaks = save_;
+  for(var i=0;i<list.length;i++) if(keep[list[i]] && out.indexOf(list[i])<0) out.push(list[i]);
+  return out.sort();
 }
 
 /* tiến độ công việc của 1 tuần */
@@ -719,13 +775,21 @@ function topbar(){
 function spine(only){
   if(!semStart()) return '';
   var subs = only ? [only] : S.subjects;
-  var cw = currentWeek(), out='', n, i, j;
-  for(n=1;n<=S.semester.weeks;n++){
-    var cls = n<cw ? "past" : (n===cw ? "now" : "");
-    var dots='';
+  var out = '', t = today().getTime();
+  /* đi theo tuần lịch để tuần nghỉ cũng có chỗ trên dải, đúng như trên lịch giấy */
+  eachCalWeek(function(mon, n){
+    var end = addDays(mon,6);
+    var cls = end.getTime() < t ? "past" : (mon.getTime() <= t ? "now" : "");
+    if(n === null){
+      out += '<div class="spine-wk brk '+cls+'" title="Tuần nghỉ · '+fmtDate(mon)+' – '+fmtDate(end)+'">'
+           + '<div class="spine-bar"></div><div class="spine-dots"></div>'
+           + '<span class="spine-n">·</span></div>';
+      return;
+    }
+    var dots = '', i, j;
     for(i=0;i<subs.length;i++){
       for(j=0;j<subs[i].assessments.length;j++){
-        var a=subs[i].assessments[j];
+        var a = subs[i].assessments[j];
         if(weekOfDate(parseD(a.due))===n){
           dots += '<i class="spine-dot'+((+a.weight||0)>=30?' big':'')+'" style="background:'+
                   ((+a.weight||0)>=30?'var(--urgent)':subs[i].color)+'"></i>';
@@ -737,7 +801,7 @@ function spine(only){
          + '<div class="spine-dots">'+dots+'</div>'
          + '<span class="spine-n">'+n+'</span>'
          + '</button>';
-  }
+  });
   return '<div class="spine"><div class="spine-track">'+out+'</div></div>';
 }
 
@@ -874,7 +938,16 @@ function subjectCard(s){
 
 function thisWeekCard(){
   var cw = currentWeek();
-  if(!cw) return '';
+  if(!cw){
+    /* đang nghỉ thì nói rõ, đừng để trống làm người dùng tưởng hỏng */
+    if(inBreakWeek())
+      return '<div class="card"><div class="card-head"><h3>Tuần nghỉ</h3>'
+        + '<span class="eyebrow">không tính vào số tuần học</span></div>'
+        + '<div class="card-pad muted" style="font-size:14px">'
+        + 'Tuần này không có checklist. Deadline và chủ đề cần ôn vẫn chạy như thường.'
+        + '</div></div>';
+    return '';
+  }
   var out='', any=false;
   for(var i=0;i<S.subjects.length;i++){
     var s=S.subjects[i], w=null;
@@ -1215,6 +1288,7 @@ function openModal(title, body, foot){
 function closeModal(){
   /* đóng hộp thoại mà chưa Lưu thì bỏ luôn ảnh vừa tải lên, tránh rác trong kho */
   if(typeof discardNoteDraft === "function") discardNoteDraft();
+  semBreaks = null;
   $("modal-root").innerHTML = "";
 }
 function fld(id,label,type,val,extra){
@@ -1227,15 +1301,58 @@ function sel(id,label,opts,val){
 }
 function val(id){ var e=$(id); return e?e.value.trim():""; }
 
+var semBreaks = null;          // tuần nghỉ đang sửa trong hộp thoại Học kỳ
+
 function modalSemester(){
+  semBreaks = (S.semester.breaks || []).slice();
   openModal("Học kỳ",
     fld("f_sem","Tên học kỳ","text",S.semester.name)
     + '<div class="grid g2" style="gap:0 14px">'
-    + fld("f_wks","Số tuần","number",S.semester.weeks,'min="1" max="30"')
-    + fld("f_start","Thứ 2 của tuần 1","date",S.semester.start)
+    + fld("f_wks","Số tuần học","number",S.semester.weeks,'min="1" max="30" data-act="semField"')
+    + fld("f_start","Thứ 2 của tuần 1","date",S.semester.start,'data-act="semField"')
     + '</div>'
-    + '<p class="muted" style="font-size:13px;margin:0">Ngày bắt đầu dùng để tính bạn đang ở tuần mấy và để vẽ lịch lecture/tutorial.</p>',
+    + '<p class="muted" style="font-size:13px;margin:0 0 16px">Số tuần học không tính tuần nghỉ. '
+    + 'Ngày bắt đầu dùng để tính bạn đang ở tuần mấy và để vẽ lịch lecture/tutorial.</p>'
+    + '<div class="fl"><span class="eyebrow" style="display:block;margin-bottom:6px">Các tuần trong học kỳ</span>'
+    + '<div class="wklist" id="f_breaks"></div>'
+    + '<p class="muted" style="font-size:12px;margin:8px 0 0">Bấm vào một tuần để đánh dấu là tuần nghỉ. '
+    + 'Tuần nghỉ không mang số, các tuần sau đó vẫn đánh số tiếp chứ không nhảy cóc.</p></div>',
     '<button class="btn" data-act="closeModal">Huỷ</button><button class="btn acc" data-act="saveSem">Lưu</button>');
+  paintSemBreaks();
+}
+
+/* vẽ lại danh sách tuần theo ngày bắt đầu và số tuần đang nhập trong hộp thoại */
+function paintSemBreaks(){
+  var box = $("f_breaks");
+  if(!box || !semBreaks) return;
+  var start = parseD(cleanDate(val("f_start")));
+  var total = clamp(+val("f_wks")||13, 1, 30);
+  if(!start){
+    box.innerHTML = '<div class="muted" style="font-size:13px;padding:8px 2px">'
+      + 'Chọn ngày bắt đầu trước, rồi mới đặt được tuần nghỉ.</div>';
+    return;
+  }
+  var brk = {}, i;
+  for(i=0;i<semBreaks.length;i++) brk[semBreaks[i]] = 1;
+
+  var out = '', n = 0, k = 0;
+  while(n < total && k < 200){
+    var mon = addDays(start, k*7), key = iso(mon), isBreak = !!brk[key];
+    if(!isBreak) n++;
+    /* cột phải chỉ nói điều mà con số bên trái chưa nói: tuần này là tuần nghỉ */
+    out += '<button class="wkrow'+(isBreak?' brk':'')+'" data-act="toggleBreak" data-d="'+key+'"'
+      + ' title="'+(isBreak?'Bấm để tính lại thành tuần học':'Bấm để đánh dấu là tuần nghỉ')+'">'
+      + '<span class="wkrow-n">'+(isBreak?'—':n)+'</span>'
+      + '<span class="wkrow-d">'+fmtDate(mon)+' – '+fmtDate(addDays(mon,6))+'</span>'
+      + '<span class="wkrow-t">'+(isBreak?'Nghỉ':'')+'</span>'
+      + '</button>';
+    k++;
+  }
+  var nb = 0;
+  for(i=0;i<semBreaks.length;i++) if(out.indexOf('data-d="'+semBreaks[i]+'"')>=0) nb++;
+  box.innerHTML = out
+    + '<div class="wksum mono">'+total+' tuần học'
+    + (nb ? ' · '+nb+' tuần nghỉ · kéo dài '+(total+nb)+' tuần lịch' : '')+'</div>';
 }
 
 function modalSubject(id){
@@ -1469,8 +1586,17 @@ var ACT = {
     S.semester.name = val("f_sem")||S.semester.name;
     S.semester.weeks = clamp(+val("f_wks")||13,1,30);
     S.semester.start = cleanDate(val("f_start"));
+    S.semester.breaks = pruneBreaks(semBreaks || S.semester.breaks || []);
+    semBreaks = null;
     for(var i=0;i<S.subjects.length;i++) syncWeeks(S.subjects[i]);
     closeModal();
+  },
+  toggleBreak:function(el){
+    if(!semBreaks) return "skip";
+    var d = el.dataset.d, i = semBreaks.indexOf(d);
+    if(i>=0) semBreaks.splice(i,1); else semBreaks.push(d);
+    paintSemBreaks();
+    return "skip";
   },
   newAssess:function(el){ modalAssess(el.dataset.sid,null); },
   openAssess:function(el){ modalAssess(el.dataset.sid,el.dataset.aid); },
@@ -1572,6 +1698,8 @@ var ACT = {
 
 /* thay đổi giá trị input */
 var CHG = {
+  /* đổi ngày bắt đầu hay số tuần thì vẽ lại danh sách tuần trong hộp thoại */
+  semField:function(){ paintSemBreaks(); return "noRender"; },
   setGrade:function(el){
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){
