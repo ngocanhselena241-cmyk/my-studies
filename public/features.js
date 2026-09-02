@@ -760,6 +760,21 @@ function calEvents(){
         push(t.nextReview,{cls:"review", time:"", txt:"Ôn: "+t.name, sid:s.id, color:s.color, sort:1});
     }
   }
+  /* Việc trong dự án: chỉ những việc có hạn và chưa xong. Không thuộc môn nào
+     nên khi đang lọc theo một môn thì ẩn đi. */
+  if(!filter){
+    var ps = S.projects||[];
+    for(i=0;i<ps.length;i++){
+      for(j=0;j<(ps[i].tasks||[]).length;j++){
+        var pt = ps[i].tasks[j];
+        if(!pt.due || pt.done) continue;
+        push(pt.due, {cls:"proj", time:"", proj:true, sort:0,
+                      txt:(ps[i].name ? ps[i].name+" · " : "")+pt.label,
+                      color:"var(--ink3)"});
+      }
+    }
+  }
+
   for(i=0;i<S.sessions.length;i++){
     var ss=S.sessions[i];
     if(filter && ss.subjectId!==filter) continue;
@@ -777,7 +792,9 @@ function calEvents(){
 }
 
 function evHTML(e, full){
-  var attr = e.aid
+  var attr = e.proj
+    ? 'data-act="go" data-tab="dash"'          /* dự án nằm ở trang Tổng quan */
+    : e.aid
     ? 'data-act="openAssess" data-sid="'+e.sid+'" data-aid="'+e.aid+'"'
     : 'data-act="go" data-tab="subject" data-sid="'+e.sid+'"';
   return '<button class="ev '+e.cls+(full?" evfull":"")+'" style="--ec:'+e.color+'" '+attr+'>'
@@ -820,6 +837,8 @@ function viewCalendar(){
      + '<span class="pill" style="background:#f7e3e1;color:var(--urgent);border-color:transparent">Exam</span>'
      + '<span class="pill" style="background:var(--accent-soft);color:var(--accent-deep);border-color:transparent">Ôn tập</span>'
      + '<span class="pill">Lecture / Tutorial</span>'
+     + '<span class="pill" style="background:var(--surface2);color:var(--ink2);'
+       + 'border-style:dashed">Việc dự án</span>'
      + '<span class="pill" style="background:#eceef0;color:var(--ink2);border-color:transparent">Đã học</span></div>'
    + (semStart()?'':'<div class="center-empty">Chưa đặt ngày bắt đầu học kỳ nên lịch lecture/tutorial chưa hiện. Vào Cài đặt để nhập.</div>')
    + '</div>';

@@ -292,6 +292,8 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 }
 .ev.due{background:var(--violet-soft);color:var(--violet);font-weight:500}
 .ev.exam{background:#f7e3e1;color:var(--urgent);font-weight:600}
+/* việc trong dự án: không thuộc môn nào nên để trung tính, viền gạch đứt */
+.ev.proj{background:var(--surface2);color:var(--ink2);border-left-style:dashed}
 
 /* ---------- analytics bars ---------- */
 .hbar{display:flex;align-items:center;gap:11px;padding:7px 0}
