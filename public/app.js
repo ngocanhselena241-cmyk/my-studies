@@ -724,6 +724,7 @@ function render(){
       v.tab==="dash"      ? viewDash()
     : v.tab==="subject"   ? viewSubject()
     : v.tab==="deadlines" ? viewDeadlines()
+    : v.tab==="wam"       ? viewWam()
     : v.tab==="calendar"  ? viewCalendar()
     : v.tab==="exam"      ? viewExam()
     : v.tab==="assist"    ? viewAssist()
@@ -747,6 +748,7 @@ function topbar(){
            (v.tab==="subject"&&v.subjectId===s.id?"on":"")+'">'+esc(s.code)+'</button>';
   }
   nav += '<button data-act="go" data-tab="deadlines" class="'+(v.tab==="deadlines"?"on":"")+'">Deadline</button>'
+       + '<button data-act="go" data-tab="wam" class="'+(v.tab==="wam"?"on":"")+'">WAM</button>'
        + '<button data-act="go" data-tab="calendar" class="'+(v.tab==="calendar"?"on":"")+'">Lịch</button>'
        + '<button data-act="go" data-tab="exam" class="'+(v.tab==="exam"?"on":"")+'">Ôn thi</button>'
        + '<button data-act="go" data-tab="assist" class="'+(v.tab==="assist"?"on":"")+'">Trợ lý</button>'
@@ -877,6 +879,105 @@ function viewDeadlines(){
       + '<button class="btn sm ghost" data-act="go" data-tab="calendar">Xem trên lịch</button>'
     + '</div>' + out
   + '</div>';
+}
+
+/* ---------- 6c. WAM CẢ BẰNG ---------------------------------------------
+   Danh sách môn đã học của cả chương trình, tách hẳn khỏi các môn của học kỳ
+   hiện tại: chỉ có mã môn, số tín chỉ và điểm tổng kết, không có trang riêng.
+   WAM = tổng(điểm × tín chỉ) / tổng(tín chỉ).
+   ------------------------------------------------------------------------ */
+var WAM_DEFAULT_CP = 6;
+
+function wamList(){ S.wam = S.wam || []; return S.wam; }
+function wamById(id){
+  var w = wamList();
+  for(var i=0;i<w.length;i++) if(w[i].id===id) return w[i];
+  return null;
+}
+function wamHasMark(r){ return r && r.mark!=null && r.mark!=="" && !isNaN(+r.mark); }
+
+function wamCalc(){
+  var w = wamList(), sum=0, cp=0, n=0, pending=0;
+  for(var i=0;i<w.length;i++){
+    var c = +w[i].cp;
+    if(!wamHasMark(w[i]) || !(c>0)){ pending++; continue; }
+    sum += (+w[i].mark)*c; cp += c; n++;
+  }
+  return {wam: cp>0 ? sum/cp : null, cp:cp, counted:n, pending:pending, total:w.length};
+}
+
+function viewWam(){
+  var w = wamList(), rows='', i;
+  for(i=0;i<w.length;i++){
+    var r = w[i], has = wamHasMark(r), b = has ? band(+r.mark) : null;
+    rows += '<tr>'
+      + '<td><input type="text" value="'+esc(r.code||"")+'" placeholder="Mã môn" '
+        + 'class="wam-code" data-act="setWamCode" data-id="'+r.id+'"></td>'
+      + '<td><input type="text" value="'+esc(r.name||"")+'" placeholder="Tên môn (không bắt buộc)" '
+        + 'class="wam-name" data-act="setWamName" data-id="'+r.id+'"></td>'
+      + '<td class="num"><input type="number" min="0" step="0.5" value="'+(r.cp==null?"":+r.cp)+'" '
+        + 'placeholder="'+WAM_DEFAULT_CP+'" class="wam-num" data-act="setWamCp" data-id="'+r.id+'"></td>'
+      + '<td class="num"><input type="number" min="0" max="100" step="0.5" value="'+(has?+r.mark:"")+'" '
+        + 'placeholder="—" class="wam-num" data-act="setWamMark" data-id="'+r.id+'"></td>'
+      + '<td class="num">'+(b?'<span class="band" style="color:var('+b.v+')">'+b.short+'</span>':'<span class="muted">—</span>')+'</td>'
+      + '<td class="num"><button class="btn ghost sm" data-act="delWam" data-id="'+r.id+'" title="Xoá môn">×</button></td>'
+      + '</tr>';
+  }
+  return '<div class="stack">'
+    + '<div class="card"><div class="card-head"><h3>Các môn đã học</h3>'
+      + '<span class="eyebrow">tách riêng với môn của học kỳ này</span></div>'
+      + '<div class="card-pad">'
+      + '<div style="overflow-x:auto"><table class="wamtable">'
+        + '<thead><tr><th>Mã môn</th><th>Tên môn</th><th class="num">Tín chỉ</th>'
+        + '<th class="num">Điểm</th><th class="num">Xếp loại</th><th></th></tr></thead>'
+        + '<tbody>'+(rows||'<tr><td colspan="6" class="muted" style="padding:14px 0">'
+          + 'Chưa có môn nào. Thêm từng môn đã học kèm điểm tổng kết để tính WAM.</td></tr>')+'</tbody>'
+      + '</table></div>'
+      + '<button class="btn" style="margin-top:12px" data-act="newWam">+ Thêm môn</button>'
+      + '<p class="muted" style="font-size:12px;margin:12px 0 0">Những môn ở đây chỉ dùng để tính WAM. '
+      + 'Chúng không xuất hiện trong danh sách môn của học kỳ và không có trang riêng.</p>'
+      + '</div></div>'
+    + '<div id="wam-sum">'+wamSummary()+'</div>'
+  + '</div>';
+}
+
+/* cập nhật kết quả và ô xếp loại của dòng vừa sửa, không đụng tới ô đang gõ */
+function repaintWam(el){
+  var box = $("wam-sum");
+  if(box) box.innerHTML = wamSummary();
+  var tr = el && el.closest ? el.closest("tr") : null;
+  if(!tr) return;
+  var cells = tr.querySelectorAll("td");
+  var cell = cells[4];
+  if(!cell) return;
+  var r = wamById(el.dataset.id), b = wamHasMark(r) ? band(+r.mark) : null;
+  cell.innerHTML = b ? '<span class="band" style="color:var('+b.v+')">'+b.short+'</span>'
+                     : '<span class="muted">—</span>';
+}
+
+function wamSummary(){
+  var c = wamCalc();
+  var b = c.wam==null ? null : band(c.wam);
+  var note = c.total===0
+    ? 'Thêm môn ở trên để bắt đầu tính.'
+    : c.counted===0
+    ? 'Chưa môn nào có đủ cả điểm và số tín chỉ.'
+    : c.counted+' môn · '+c.cp+' tín chỉ'
+      + (c.pending ? ' · bỏ qua '+c.pending+' môn chưa đủ điểm hoặc tín chỉ' : '');
+  return '<div class="card card-pad">'
+    + '<div class="spread wrap" style="gap:14px">'
+      + '<div>'
+        + '<div class="eyebrow" style="margin-bottom:6px">WAM cả bằng</div>'
+        + '<div class="row" style="align-items:baseline;gap:10px">'
+        + '<span class="bignum"'+(b?' style="color:var('+b.v+')"':'')+'>'
+        + (c.wam==null?'—':c.wam.toFixed(2))+'</span>'
+        + (b?'<span class="band" style="color:var('+b.v+')">'+esc(b.name)+'</span>':'')
+        + '</div>'
+        + '<div class="dl-meta" style="margin-top:8px">'+esc(note)+'</div>'
+      + '</div>'
+      + '<div class="muted mono" style="font-size:11px;text-align:right;line-height:1.7">'
+        + 'tổng(điểm × tín chỉ)<br>chia cho tổng tín chỉ</div>'
+    + '</div></div>';
 }
 
 /* ---------- 7. TỔNG QUAN -------------------------------------------------- */
@@ -1591,6 +1692,15 @@ var ACT = {
     for(var i=0;i<S.subjects.length;i++) syncWeeks(S.subjects[i]);
     closeModal();
   },
+  newWam:function(){
+    wamList().push({id:uid(), code:"", name:"", cp:WAM_DEFAULT_CP, mark:""});
+    focusAfterRender = ".wamtable tbody tr:last-child .wam-code";
+  },
+  delWam:function(el){
+    var r = wamById(el.dataset.id);
+    if(r && (r.code || wamHasMark(r)) && !confirm("Xoá môn này khỏi bảng WAM?")) return "skip";
+    S.wam = wamList().filter(function(x){ return x.id!==el.dataset.id; });
+  },
   toggleBreak:function(el){
     if(!semBreaks) return "skip";
     var d = el.dataset.d, i = semBreaks.indexOf(d);
@@ -1700,6 +1810,26 @@ var ACT = {
 var CHG = {
   /* đổi ngày bắt đầu hay số tuần thì vẽ lại danh sách tuần trong hộp thoại */
   semField:function(){ paintSemBreaks(); return "noRender"; },
+
+  /* Bảng WAM: vẽ lại cả trang sẽ cướp con trỏ khi đang tab từ ô này sang ô
+     kia, nên chỉ ghi dữ liệu rồi cập nhật riêng khối kết quả bên dưới. */
+  setWamCode:function(el){ var r=wamById(el.dataset.id); if(r) r.code=el.value.trim(); return "noRender"; },
+  setWamName:function(el){ var r=wamById(el.dataset.id); if(r) r.name=el.value.trim(); return "noRender"; },
+  setWamCp:function(el){
+    var r=wamById(el.dataset.id); if(!r) return "noRender";
+    var v=el.value.trim();
+    r.cp = v==="" ? "" : Math.max(0,+v||0);
+    repaintWam(el);
+    return "noRender";
+  },
+  setWamMark:function(el){
+    var r=wamById(el.dataset.id); if(!r) return "noRender";
+    var v=el.value.trim();
+    r.mark = v==="" ? "" : clamp(+v||0,0,100);
+    if(r.mark!=="" && +el.value!==r.mark) el.value = r.mark;   /* kẹp về 0–100 */
+    repaintWam(el);
+    return "noRender";
+  },
   setGrade:function(el){
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){

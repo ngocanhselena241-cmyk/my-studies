@@ -225,6 +225,13 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 
 /* ---------- tables ---------- */
 table{width:100%;border-collapse:collapse}
+
+/* bảng WAM */
+.wamtable{min-width:620px}
+.wamtable input{padding:5px 8px;font-size:13.5px}
+input.wam-code{width:100%;min-width:90px;font-family:var(--mono)}
+input.wam-name{width:100%;min-width:150px}
+input.wam-num{width:78px;text-align:right}
 th{
   font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--ink3);text-align:left;font-weight:500;padding:9px 12px;border-bottom:1px solid var(--line);
