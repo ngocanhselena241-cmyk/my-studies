@@ -690,14 +690,14 @@ function projectsCard(){
     for(j=0;j<(pr.tasks||[]).length;j++){
       var t=pr.tasks[j];
       var c = (t.due && !t.done) ? countdown(t.due) : null;
-      items += '<div class="ptask">'
-        + '<button class="check '+(t.done?"on":"")+'" style="flex:1;min-width:0" '
-          + 'data-act="togglePTask" data-pid="'+pr.id+'" data-ti="'+j+'">'
-          + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(t.label)+'</span></button>'
-        + (c?'<span class="cd '+c.cls+'">'+c.txt+'</span>':'')
-        + '<input class="ptask-due" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
-          + 'data-act="setPTaskDue" data-pid="'+pr.id+'" data-ti="'+j+'">'
-        + '<button class="btn ghost sm" data-act="delPTask" data-pid="'+pr.id+'" data-ti="'+j+'" title="Xoá việc">×</button>'
+      items += taskLine({
+        tk:"ptask", pid:pr.id, i:j, done:t.done, label:t.label, cls:"ptask",
+        toggle:'data-act="togglePTask" data-pid="'+pr.id+'" data-ti="'+j+'"',
+        after: (c?'<span class="cd '+c.cls+'">'+c.txt+'</span>':'')
+          + '<input class="ptask-due" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
+            + 'data-act="setPTaskDue" data-pid="'+pr.id+'" data-ti="'+j+'">'
+          + '<button class="btn ghost sm" data-act="delPTask" data-pid="'+pr.id+'" data-ti="'+j+'" title="Xoá việc">×</button>'
+      })
         + '</div>';
     }
     out += '<div class="projgroup">'
@@ -744,6 +744,7 @@ function render(){
   hydrateImages($("root"));
   wireAddRow();
   wireTopicInput();
+  wireTaskInput();
   applyFocusAfterRender();
 }
 
@@ -827,6 +828,104 @@ function timerWidget(){
     + '<span class="pill acc">'+esc(s?s.code:"—")+'</span>'
     + '<button class="btn sm" data-act="stopTimer">Dừng &amp; lưu</button>'
   + '</div>';
+}
+
+/* ---------- 6a. MỘT DÒNG VIỆC -------------------------------------------
+   Ô tick bấm một lần để đánh dấu xong; chữ nhấn đúp để sửa nội dung.
+   Chữ cố ý không còn là nút tick: nếu vừa tick vừa nhấn đúp trên cùng một
+   nút thì cú bấm đầu đã vẽ lại trang, cú thứ hai mất chỗ bám và trình duyệt
+   không bắn dblclick nữa.
+   ------------------------------------------------------------------------ */
+var editingTask = null;   // {tk, sid, wk, aid, pid, i, key, value}
+
+function taskKeyOf(o){
+  return [o.tk, o.sid||"", o.wk||"", o.aid||"", o.pid||"", o.i].join("|");
+}
+
+/* lần ngược từ mô tả về đúng object việc trong dữ liệu */
+function taskRefOf(ed){
+  if(!ed) return null;
+  var s, i;
+  if(ed.tk==="ptask"){
+    var pr = projById(ed.pid);
+    return pr ? (pr.tasks||[])[ed.i]||null : null;
+  }
+  s = subj(ed.sid);
+  if(!s) return null;
+  if(ed.tk==="task"){
+    for(i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+ed.wk) return (s.weeks[i].tasks||[])[ed.i]||null;
+    return null;
+  }
+  if(ed.tk==="sub"){
+    for(i=0;i<s.assessments.length;i++) if(s.assessments[i].id===ed.aid)
+      return (s.assessments[i].subtasks||[])[ed.i]||null;
+    return null;
+  }
+  if(ed.tk==="exam") return (s.examList||[])[ed.i]||null;
+  return null;
+}
+
+function taskLine(o){
+  var key = taskKeyOf(o);
+  var editing = editingTask && editingTask.key===key;
+  var ref = 'data-tk="'+o.tk+'" data-ti="'+o.i+'"'
+    + (o.sid?' data-sid="'+o.sid+'"':'')
+    + (o.wk ?' data-wk="'+o.wk+'"':'')
+    + (o.aid?' data-aid="'+o.aid+'"':'')
+    + (o.pid?' data-pid="'+o.pid+'"':'');
+  var mid = editing
+    ? '<input id="task_in" class="task-in" type="text" autocomplete="off" value="'
+      + esc(editingTask.value!==null ? editingTask.value : o.label)+'">'
+    : '<span class="check-lab" data-dbl="task" '+ref+' title="Nhấn đúp để sửa">'+esc(o.label)+'</span>';
+  return '<div class="task-row'+(o.cls?' '+o.cls:'')+(o.done?' done':'')+'">'
+    + '<button class="tickbox'+(o.done?' on':'')+'" '+o.toggle+' title="Đánh dấu xong">'
+      + '<span class="box">'+TICK+'</span></button>'
+    + mid + (o.after||'')
+  + '</div>';
+}
+
+function startTaskEdit(el){
+  if(editingTask) return;
+  var d = el.dataset;
+  var ed = {tk:d.tk, sid:d.sid||"", wk:d.wk||"", aid:d.aid||"", pid:d.pid||"",
+            i:+d.ti, value:null};
+  ed.key = taskKeyOf(ed);
+  if(!taskRefOf(ed)) return;
+  editingTask = ed;
+  render();
+}
+
+/* gắn lại sau mỗi lần vẽ, giống ô sửa tên tuần */
+function wireTaskInput(){
+  var inp = $("task_in");
+  if(!inp || !editingTask) return;
+  var first = editingTask.value===null;
+  inp.focus();
+  if(first) inp.select();
+  else inp.setSelectionRange(inp.value.length, inp.value.length);
+
+  var handled = false;
+  var finish = function(keep){
+    if(!editingTask) return;
+    var t = taskRefOf(editingTask), v = inp.value.trim();
+    if(keep && t && v) t.label = v;          /* để trống thì giữ nguyên tên cũ */
+    editingTask = null;
+    save();
+    setTimeout(render, 0);
+  };
+  inp.addEventListener("input", function(){ editingTask.value = inp.value; });
+  inp.addEventListener("keydown", function(ev){
+    ev.stopPropagation();
+    /* bộ gõ tiếng Việt: phím này đang chốt chữ, chưa phải Enter thật */
+    if(ev.isComposing || ev.keyCode===229) return;
+    if(ev.key==="Enter"){ ev.preventDefault(); handled=true; finish(true); }
+    else if(ev.key==="Escape"){ ev.preventDefault(); handled=true; finish(false); }
+  });
+  inp.addEventListener("blur", function(){
+    if(rendering) return;
+    if(!handled){ handled=true; finish(true); }
+  });
+  inp.addEventListener("click", function(ev){ ev.stopPropagation(); });
 }
 
 /* ---------- 6b. DEADLINE ------------------------------------------------ */
@@ -1067,8 +1166,10 @@ function thisWeekCard(){
     /* việc đã tick vẫn ở nguyên chỗ, chỉ gạch ngang cho biết đã xong */
     for(var t=0;t<w.tasks.length;t++){
       var tk=w.tasks[t];
-      items += '<button class="check '+(tk.done?"on":"")+'" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'">'
-             + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(tk.label)+'</span></button>';
+      items += taskLine({
+        tk:"task", sid:s.id, wk:cw, i:t, done:tk.done, label:tk.label,
+        toggle:'data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'"'
+      });
     }
     out += '<div style="padding:14px 18px;border-bottom:1px solid var(--line2)">'
          + '<div class="spread" style="margin-bottom:4px"><div class="row" style="gap:8px">'
@@ -1173,10 +1274,11 @@ function subWeekly(s){
     var items='';
     for(var t=0;t<(w.tasks||[]).length;t++){
       var tk=w.tasks[t];
-      items += '<div class="row" style="gap:6px">'
-        + '<button class="check '+(tk.done?"on":"")+'" style="flex:1" data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+t+'">'
-        + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(tk.label)+'</span></button>'
-        + '<button class="btn ghost sm" data-act="delTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+t+'" title="Xoá">×</button></div>';
+      items += taskLine({
+        tk:"task", sid:s.id, wk:w.n, i:t, done:tk.done, label:tk.label,
+        toggle:'data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+t+'"',
+        after:'<button class="btn ghost sm" data-act="delTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+t+'" title="Xoá">×</button>'
+      });
     }
     out += '<div class="wk '+(w.n===cw?"cur":"")+'">'
       + '<button class="wk-head" data-act="toggleWeek" data-sid="'+s.id+'" data-wk="'+w.n+'">'
@@ -1211,10 +1313,11 @@ function subAssess(s){
     var subs='';
     for(var j=0;j<(a.subtasks||[]).length;j++){
       var t=a.subtasks[j];
-      subs += '<div class="row" style="gap:6px">'
-        + '<button class="check '+(t.done?"on":"")+'" style="flex:1" data-act="toggleSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'">'
-        + '<span class="box">'+TICK+'</span><span class="check-lab">'+esc(t.label)+'</span></button>'
-        + '<button class="btn ghost sm" data-act="delSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'">×</button></div>';
+      subs += taskLine({
+        tk:"sub", sid:s.id, aid:a.id, i:j, done:t.done, label:t.label,
+        toggle:'data-act="toggleSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'"',
+        after:'<button class="btn ghost sm" data-act="delSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'">×</button>'
+      });
     }
     var statusOpts='';
     for(var k=0;k<STATUSES.length;k++)
@@ -1912,6 +2015,11 @@ function closeInlineEditors(){
     if(w && editingTopic.value!==null) w.topic = editingTopic.value.trim();
     editingTopic = null;
   }
+  if(editingTask){
+    var t = taskRefOf(editingTask);
+    if(t && editingTask.value!==null && editingTask.value.trim()) t.label = editingTask.value.trim();
+    editingTask = null;
+  }
 }
 
 var ADD_HINT = {
@@ -2066,6 +2174,7 @@ document.addEventListener("dblclick", function(ev){
   if(!el) return;
   ev.preventDefault();
   if(el.dataset.dbl==="topic") startInlineTopic(el);
+  else if(el.dataset.dbl==="task") startTaskEdit(el);
 });
 
 document.addEventListener("click",function(ev){

@@ -1092,10 +1092,11 @@ function examPanel(s, a, days){
   var cl = examChecklist(s), items='', cdone=0;
   for(i=0;i<cl.length;i++){
     if(cl[i].done) cdone++;
-    items += '<div class="row" style="gap:6px">'
-      + '<button class="check '+(cl[i].done?"on":"")+'" style="flex:1" data-act="examCheck" data-sid="'+s.id+'" data-i="'+i+'">'
-      + '<span class="box"></span><span class="check-lab">'+esc(cl[i].label)+'</span></button>'
-      + '<button class="btn ghost sm" data-act="delExamItem" data-sid="'+s.id+'" data-i="'+i+'">×</button></div>';
+    items += taskLine({
+      tk:"exam", sid:s.id, i:i, done:cl[i].done, label:cl[i].label,
+      toggle:'data-act="examCheck" data-sid="'+s.id+'" data-i="'+i+'"',
+      after:'<button class="btn ghost sm" data-act="delExamItem" data-sid="'+s.id+'" data-i="'+i+'">×</button>'
+    });
   }
 
   var urgency = days<0 ? "x" : days<=3 ? "r" : days<=7 ? "y" : days<=14 ? "y" : "g";

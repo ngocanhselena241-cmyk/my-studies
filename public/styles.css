@@ -202,6 +202,20 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .box svg{width:10px;height:10px;stroke:#fff;stroke-width:2.5;fill:none;opacity:0}
 .check.on .box svg{opacity:1}
 .check-lab{font-size:14px}
+
+/* một dòng việc: ô tick riêng, chữ nhấn đúp để sửa */
+.task-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0}
+.tickbox{background:none;border:0;padding:0;flex:none;margin-top:1px;display:grid;place-items:center}
+.tickbox:hover .box{border-color:var(--accent)}
+.tickbox.on .box{background:var(--accent);border-color:var(--accent)}
+.tickbox.on .box svg{opacity:1}
+.task-row>.check-lab{flex:1;min-width:0;cursor:text;overflow-wrap:anywhere;line-height:1.45}
+.task-row>.check-lab:hover{text-decoration:underline dotted var(--line);text-underline-offset:3px}
+.task-row.done>.check-lab{color:var(--ink3);text-decoration:line-through}
+input.task-in{
+  flex:1;min-width:0;font-size:14px;padding:3px 8px;
+  border:1px solid var(--accent);border-radius:6px;background:var(--surface);outline:none;
+}
 .check.on .check-lab{color:var(--ink3);text-decoration:line-through}
 
 /* ---------- week accordion ---------- */
@@ -489,9 +503,7 @@ input.projname{
 }
 input.projname:hover{border-color:var(--line)}
 input.projname:focus{border-color:var(--accent);background:var(--surface);outline:none}
-.ptask{display:flex;align-items:center;gap:8px;padding:2px 0}
-.ptask .check{flex:1;min-width:0;padding:5px 0}
-.ptask .check-lab{overflow-wrap:anywhere}
+.ptask{align-items:center;gap:8px;padding:4px 0}
 input.ptask-due{
   flex:none;width:140px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;
   background:var(--surface);font-family:var(--mono);font-size:11.5px;color:var(--ink3);
