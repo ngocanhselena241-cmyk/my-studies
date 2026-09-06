@@ -373,6 +373,14 @@ function iso(d){
 /* Ô <input type="date"> coi 27/08/2 là ngày hợp lệ (năm 0002). Đừng dùng
    parseD để kiểm tra: JavaScript quy năm hai chữ số về 1900+, nên 0002 hoá
    thành 1902 và lọt lưới. Phải đọc thẳng chuỗi yyyy-mm-dd. */
+/* Tick xong một việc thì ghi luôn ngày, để heatmap đếm được việc xong mỗi
+   ngày. Bỏ tick thì xoá dấu ngày đi. */
+function setDone(t, done){
+  t.done = done;
+  if(done) t.doneAt = iso(today());
+  else delete t.doneAt;
+}
+
 function cleanDate(v){
   v = String(v||"");
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return "";
@@ -1579,7 +1587,8 @@ var ACT = {
   toggleTask:function(el){
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.weeks.length;i++) if(s.weeks[i].n===+el.dataset.wk){
-      var t=s.weeks[i].tasks[+el.dataset.ti]; t.done=!t.done;
+      var t=s.weeks[i].tasks[+el.dataset.ti];
+      setDone(t, !t.done);
       if(t.done) awardXP(10,true);
     }
   },
@@ -1608,7 +1617,8 @@ var ACT = {
   toggleSub:function(el){
     var s=subj(el.dataset.sid);
     for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){
-      var t=s.assessments[i].subtasks[+el.dataset.ti]; t.done=!t.done;
+      var t=s.assessments[i].subtasks[+el.dataset.ti];
+      setDone(t, !t.done);
       if(t.done) awardXP(15,true);
     }
   },
@@ -1644,7 +1654,7 @@ var ACT = {
     if(!pr) return "skip";
     var t = pr.tasks[+el.dataset.ti];
     if(!t) return "skip";
-    t.done = !t.done;
+    setDone(t, !t.done);
     if(t.done) awardXP(10,true);
   },
   delPTask:function(el){

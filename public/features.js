@@ -894,6 +894,23 @@ function calDay(ev,cur){
    Chỉ trả lời hai câu: tháng này học đều không, và ngày nào trong tuần
    mình học được nhiều nhất.
    ------------------------------------------------------------------------ */
+/* số việc tick xong mỗi ngày — gộp việc trong tuần, bước của assessment,
+   checklist ôn thi và việc trong dự án */
+function tasksByDay(){
+  var m = {}, i, j, k;
+  function add(t){ if(t && t.done && t.doneAt) m[t.doneAt] = (m[t.doneAt]||0) + 1; }
+  function addAll(list){ for(var x=0;x<(list||[]).length;x++) add(list[x]); }
+
+  for(i=0;i<S.subjects.length;i++){
+    var su = S.subjects[i];
+    for(j=0;j<(su.weeks||[]).length;j++) addAll(su.weeks[j].tasks);
+    for(j=0;j<(su.assessments||[]).length;j++) addAll(su.assessments[j].subtasks);
+    addAll(su.examList);
+  }
+  for(i=0;i<(S.projects||[]).length;i++) addAll(S.projects[i].tasks);
+  return m;
+}
+
 function minutesByDay(){
   var m = {};
   for(var i=0;i<S.sessions.length;i++){
@@ -902,6 +919,11 @@ function minutesByDay(){
     m[s.date] = (m[s.date]||0) + s.minutes;
   }
   return m;
+}
+
+function fmtTasks(n){
+  if(!n) return "—";
+  return (Math.round(n*10)%10===0 ? String(Math.round(n)) : n.toFixed(1)) + " việc";
 }
 
 /* mốc chia màu, tính theo chính dữ liệu của bạn chứ không đặt cứng */
@@ -941,7 +963,7 @@ function heatMonthCard(byDay){
     k = iso(day); v = byDay[k]||0;
     var lv = heatLevel(v, peak);
     cells += '<div class="heat-cell l'+lv+(k===tk?' today':'')+'"'
-      + ' title="'+i+' '+MON_SHORT[mo]+' — '+(v?fmtMins(v):'không học')+'">'
+      + ' title="'+i+' '+MON_SHORT[mo]+' — '+(v?v+' việc xong':'chưa xong việc nào')+'">'
       + '<span>'+i+'</span></div>';
   }
 
@@ -952,14 +974,15 @@ function heatMonthCard(byDay){
   /* mục tiêu giờ mỗi tuần đặt trong Cài đặt — chỗ duy nhất còn hiển thị nó */
   var goal = S.settings.weeklyGoal||0, goalLine = '';
   if(goal>0){
-    var wkFrom = mondayOf(today()), done = 0;
+    /* thanh này tính theo phút học, không phải theo số việc như heatmap */
+    var mins = minutesByDay(), wkFrom = mondayOf(today()), done = 0;
     for(i=0;i<7;i++){
       var wd = addDays(wkFrom,i);
       if(wd>today()) break;
-      done += byDay[iso(wd)]||0;
+      done += mins[iso(wd)]||0;
     }
     goalLine = '<div class="goalbar"><div class="spread">'
-      + '<span class="eyebrow">tuần này</span>'
+      + '<span class="eyebrow">giờ học tuần này</span>'
       + '<span class="mono" style="font-size:11.5px;color:'+(done>=goal?'var(--ok)':'var(--ink2)')+'">'
       + fmtMins(done)+' / '+fmtMins(goal)+'</span></div>'
       + '<div class="bar thin" style="margin-top:5px"><i style="width:'+pct(done,goal)+'%;'
@@ -979,8 +1002,8 @@ function heatMonthCard(byDay){
       + goalLine
       + '<div class="spread wrap" style="gap:10px;margin-top:14px;max-width:400px">'
         + '<span class="dl-meta">'
-          + (active ? active+'/'+daysInMonth+' ngày · '+fmtMins(total)
-                    : 'Chưa học buổi nào tháng này')+'</span>'
+          + (active ? active+'/'+daysInMonth+' ngày · '+total+' việc'
+                    : 'Chưa xong việc nào tháng này')+'</span>'
         + '<span class="heat-legend"><span class="eyebrow">ít</span>'+legend
         + '<span class="eyebrow">nhiều</span></span>'
       + '</div>'
@@ -993,8 +1016,8 @@ function bestDayCard(byDay){
   if(!keys.length){
     return '<div class="card"><div class="card-head"><h3>Ngày nào học được nhiều nhất</h3></div>'
       + '<div class="card-pad muted" style="font-size:14px">'
-      + 'Chưa có phiên học nào. Bấm “Bắt đầu học” ở thanh trên cùng để bấm giờ, '
-      + 'mỗi phiên sẽ hiện ở đây.</div></div>';
+      + 'Chưa tick xong việc nào. Mỗi việc bạn hoàn thành ở checklist tuần, '
+      + 'assessment, ôn thi hay dự án sẽ được đếm vào đây.</div></div>';
   }
   var from = parseD(keys[0]), to = today();
   var sum = [0,0,0,0,0,0,0], occ = [0,0,0,0,0,0,0], d, wd;
@@ -1015,17 +1038,17 @@ function bestDayCard(byDay){
       + '<span class="hbar-l">'+DOW[i]+'</span>'
       + '<span class="hbar-t" style="--hc:'+(i===best?'var(--accent)':'var(--line)')+'">'
       + '<i style="width:'+clamp(w,0,100)+'%"></i></span>'
-      + '<span class="hbar-v">'+(avg[i]>=1?fmtMins(avg[i]):'—')+'</span></div>';
+      + '<span class="hbar-v">'+fmtTasks(avg[i])+'</span></div>';
   }
-  return '<div class="card"><div class="card-head"><h3>Ngày nào học được nhiều nhất</h3>'
+  return '<div class="card"><div class="card-head"><h3>Ngày nào làm được nhiều nhất</h3>'
     + '<span class="eyebrow">trung bình mỗi '+DOW[best].toLowerCase()+'</span></div>'
     + '<div class="card-pad">'+rows
-    + '<div class="dl-meta" style="margin-top:12px">Trung bình mỗi ngày trong tuần, tính từ '
-    + fmtDate(from)+' tới nay.</div></div></div>';
+    + '<div class="dl-meta" style="margin-top:12px">Số việc xong trung bình mỗi ngày trong tuần, '
+    + 'tính từ '+fmtDate(from)+' tới nay.</div></div></div>';
 }
 
 function viewAnalytics(){
-  var byDay = minutesByDay();
+  var byDay = tasksByDay();
   return '<div class="grid g2 top">'+heatMonthCard(byDay)+bestDayCard(byDay)+'</div>';
 }
 /* ---------- P. CHẾ ĐỘ ÔN THI --------------------------------------------- */
@@ -1603,7 +1626,7 @@ ACT.delRes = function(el){
 
 ACT.examCheck = function(el){
   var s=subj(el.dataset.sid), cl=examChecklist(s), i=+el.dataset.i;
-  cl[i].done = !cl[i].done;
+  setDone(cl[i], !cl[i].done);
   if(cl[i].done) awardXP(20,true);
 };
 ACT.addExamItem = function(el){
