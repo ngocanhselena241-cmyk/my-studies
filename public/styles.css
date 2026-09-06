@@ -302,16 +302,40 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 /* việc trong dự án: không thuộc môn nào nên để trung tính, viền gạch đứt */
 .ev.proj{background:var(--surface2);color:var(--ink2);border-left-style:dashed}
 
+/* ---------- heatmap phân tích ---------- */
+.heat-grid{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:5px;
+  max-width:400px;   /* không có mốc này thì ô vuông phình theo bề ngang thẻ */
+}
+.heat-dow{
+  font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink3);text-align:center;padding-bottom:2px;
+}
+.heat-cell{
+  aspect-ratio:1;border-radius:6px;display:grid;place-items:center;
+  font-family:var(--mono);font-size:11.5px;border:1px solid transparent;
+}
+.heat-legend{display:flex;align-items:center;gap:5px}
+.goalbar{max-width:400px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line2)}
+.heat-cell.blank{background:none}
+.heat-cell.l0{background:var(--surface2);color:var(--ink3)}
+.heat-cell.l1{background:#cfe4e0;color:var(--accent-deep)}
+.heat-cell.l2{background:#9ecdc5;color:var(--accent-deep)}
+.heat-cell.l3{background:#5da79c;color:#fff}
+.heat-cell.l4{background:var(--accent);color:#fff;font-weight:600}
+.heat-cell.today{border-color:var(--ink);font-weight:600}
+.heat-cell.mini{width:14px;height:14px;aspect-ratio:auto;border-radius:3px}
+@media (max-width:560px){ .heat-cell{font-size:10px} }
+
+.hbar-best .hbar-l{font-weight:600;color:var(--ink)}
+.hbar-best .hbar-v{font-weight:600;color:var(--accent)}
+
 /* ---------- analytics bars ---------- */
 .hbar{display:flex;align-items:center;gap:11px;padding:7px 0}
 .hbar-l{font-family:var(--mono);font-size:12px;min-width:88px}
 .hbar-t{flex:1;height:20px;background:var(--line2);border-radius:4px;overflow:hidden}
 .hbar-t>i{display:block;height:100%;background:var(--hc,var(--accent));border-radius:4px}
 .hbar-v{font-family:var(--mono);font-size:12px;min-width:56px;text-align:right;color:var(--ink2)}
-.cols{display:flex;align-items:flex-end;gap:5px;height:130px;padding-top:8px}
-.col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;height:100%}
-.col>i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px}
-.col span{font-family:var(--mono);font-size:9.5px;color:var(--ink3)}
 
 /* ---------- timer ---------- */
 .timerbox{display:flex;align-items:center;gap:9px}
@@ -401,14 +425,6 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .markname{flex:1;font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .markval{font-size:12.5px;font-weight:600}
 .markw{font-size:10.5px;color:var(--ink3);min-width:52px;text-align:right}
-
-/* chuỗi ngày học */
-.daydots{display:flex;gap:5px;margin-top:12px}
-.daydot{
-  flex:1;text-align:center;font-family:var(--mono);font-size:9.5px;padding:5px 0;
-  border-radius:5px;background:var(--line2);color:var(--ink3);
-}
-.daydot.on{background:var(--accent);color:#fff;font-weight:600}
 
 /* hàng chủ đề */
 .topicrow{padding:12px 0;border-bottom:1px solid var(--line2)}
@@ -594,23 +610,6 @@ textarea#f_nb.dropping{
 .daytime{font-size:12px;color:var(--ink3);min-width:44px}
 .daybar{width:3px;align-self:stretch;border-radius:2px;flex:none}
 .dayrow .ev{flex:1;margin-top:0;font-size:13px}
-
-/* biểu đồ mục tiêu */
-.cols.withgoal{position:relative}
-.goalline{
-  position:absolute;left:0;right:0;border-top:1px dashed var(--ink3);pointer-events:none;
-}
-.goalline span{
-  position:absolute;right:0;top:-15px;font-size:9.5px;color:var(--ink3);
-  background:var(--surface);padding:0 4px;
-}
-
-/* nhận xét nhanh */
-.insight{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px}
-.ipill{
-  font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
-  padding:3px 8px;border-radius:20px;white-space:nowrap;
-}
 
 /* chế độ ôn thi */
 .examhero{

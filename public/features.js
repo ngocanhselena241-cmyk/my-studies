@@ -43,6 +43,7 @@ function migrateExtra(d){
   d.view.calView   = d.view.calView   || "month";
   d.view.calDate   = d.view.calDate   || iso(today());
   d.view.calFilter = d.view.calFilter || "";
+  d.view.anMonth   = d.view.anMonth   || null;   // tháng đang xem ở tab Phân tích
   d.view.examSid   = d.view.examSid   || null;
   d.view.libQuery  = d.view.libQuery  || "";
   if(d.view.subTab === "resources") d.view.subTab = "library";   // hai tab đã gộp làm một
@@ -182,19 +183,6 @@ function streak(){
   }
   return n;
 }
-function levelInfo(){
-  var xp = S.xp||0, per = 300;
-  return { level: Math.floor(xp/per)+1, into: xp%per, per: per, xp: xp };
-}
-function weekDaysActive(){
-  var m = mondayOf(today()), out=[];
-  for(var i=0;i<7;i++){
-    var k = iso(addDays(m,i));
-    out.push(!!(S.activity[k] && S.activity[k].xp>0));
-  }
-  return out;
-}
-
 /* ---------- E. POMODORO --------------------------------------------------- */
 var pomoTick = null;
 function pomoStart(sid, label){
@@ -513,22 +501,6 @@ function dashExtras(){
         + (rows?'<div class="eyebrow" style="margin-bottom:4px">Đang yếu, chưa tới lịch ôn</div>':'')
         + weakHtml+'</div>':'')
     + '</div>';
-}
-
-/* chuỗi ngày học + XP — trước ở dashboard, giờ nằm trong tab Phân tích */
-function streakCard(){
-  if(!S.settings.gamify) return '';
-  var st=streak(), lv=levelInfo(), days=weekDaysActive(), dots='';
-  for(var k=0;k<7;k++) dots += '<span class="daydot '+(days[k]?"on":"")+'">'+DOW_SHORT[k]+'</span>';
-  return '<div class="card"><div class="card-head"><h3>Chuỗi ngày học</h3>'
-    + '<span class="pill acc">Cấp '+lv.level+'</span></div><div class="card-pad">'
-    + '<div class="row" style="align-items:baseline;gap:10px">'
-    + '<span class="bignum">'+st+'</span><span class="muted" style="font-size:14px">ngày liên tiếp</span></div>'
-    + '<div class="daydots">'+dots+'</div>'
-    + '<div class="spread" style="margin-top:14px"><span class="eyebrow">'+lv.xp+' XP</span>'
-    + '<span class="mono" style="font-size:11px;color:var(--ink3)">còn '+(lv.per-lv.into)+' XP lên cấp '+(lv.level+1)+'</span></div>'
-    + '<div class="bar thin" style="margin-top:6px"><i style="width:'+pct(lv.into,lv.per)+'%"></i></div>'
-    + '</div></div>';
 }
 
 /* hàng điểm danh trong mỗi tuần */
@@ -918,123 +890,144 @@ function calDay(ev,cur){
 }
 
 /* ---------- O. PHÂN TÍCH -------------------------------------------------- */
-function viewAnalytics(){
-  if(!S.subjects.length) return '<div class="center-empty">Chưa có dữ liệu để phân tích.</div>';
-  var i, j, done=0, tot=0, overdue=0;
-  for(i=0;i<S.subjects.length;i++){ var p=subjProg(S.subjects[i]); done+=p.done; tot+=p.total; }
-  var dl=allDeadlines();
-  for(i=0;i<dl.length;i++) if(daysLeft(dl[i].a.due)<0) overdue++;
+/* ---------- O. PHÂN TÍCH -------------------------------------------------
+   Chỉ trả lời hai câu: tháng này học đều không, và ngày nào trong tuần
+   mình học được nhiều nhất.
+   ------------------------------------------------------------------------ */
+function minutesByDay(){
+  var m = {};
+  for(var i=0;i<S.sessions.length;i++){
+    var s = S.sessions[i];
+    if(!s.date) continue;
+    m[s.date] = (m[s.date]||0) + s.minutes;
+  }
+  return m;
+}
 
-  var wkStart=mondayOf(today());
-  var weekMins=studyMinutes(function(x){ var d=parseD(x.date); return d && d>=wkStart; });
-  var daysIn = ((today()-wkStart)/DAY)+1;
+/* mốc chia màu, tính theo chính dữ liệu của bạn chứ không đặt cứng */
+function heatLevel(mins, peak){
+  if(!mins) return 0;
+  var r = mins/(peak||1);
+  return r<=0.25 ? 1 : r<=0.5 ? 2 : r<=0.75 ? 3 : 4;
+}
 
-  /* thời gian học theo môn */
-  var bySub='', maxM=1;
-  for(i=0;i<S.subjects.length;i++){
-    var mm=studyMinutes((function(id){return function(x){return x.subjectId===id;};})(S.subjects[i].id));
-    if(mm>maxM) maxM=mm;
+function analyticsMonth(){
+  var v = S.view.anMonth;
+  var d = v ? parseD(v) : null;
+  return d || new Date(today().getFullYear(), today().getMonth(), 1);
+}
+
+function heatMonthCard(byDay){
+  var first = analyticsMonth();
+  var y = first.getFullYear(), mo = first.getMonth();
+  var daysInMonth = new Date(y, mo+1, 0).getDate();
+  var lead = (new Date(y, mo, 1).getDay()+6)%7;         /* thứ 2 là cột đầu */
+
+  var peak = 0, total = 0, active = 0, i, k, v;
+  for(i=1;i<=daysInMonth;i++){
+    k = iso(new Date(y, mo, i)); v = byDay[k]||0;
+    if(v>peak) peak = v;
+    if(v>0){ total += v; active++; }
   }
-  for(i=0;i<S.subjects.length;i++){
-    var s=S.subjects[i];
-    var m2=studyMinutes((function(id){return function(x){return x.subjectId===id;};})(s.id));
-    bySub += hbar(s.code, m2/maxM*100, fmtMins(m2), s.color);
+
+  var head = '';
+  for(i=0;i<7;i++) head += '<div class="heat-dow">'+DOW_SHORT[i]+'</div>';
+
+  var cells = '';
+  for(i=0;i<lead;i++) cells += '<div class="heat-cell blank"></div>';
+  var tk = iso(today());
+  for(i=1;i<=daysInMonth;i++){
+    var day = new Date(y, mo, i);
+    k = iso(day); v = byDay[k]||0;
+    var lv = heatLevel(v, peak);
+    cells += '<div class="heat-cell l'+lv+(k===tk?' today':'')+'"'
+      + ' title="'+i+' '+MON_SHORT[mo]+' — '+(v?fmtMins(v):'không học')+'">'
+      + '<span>'+i+'</span></div>';
   }
-  /* tiến độ theo môn */
-  var progBars='';
-  for(i=0;i<S.subjects.length;i++){
-    var s3=S.subjects[i], p3=subjProg(s3);
-    progBars += hbar(s3.code, p3.pct, p3.pct+'%', s3.color);
-  }
-  /* điểm theo assessment */
-  var gradeBars='', anyGrade=false;
-  for(i=0;i<S.subjects.length;i++){
-    var s4=S.subjects[i], inner='';
-    for(j=0;j<s4.assessments.length;j++){
-      var a=s4.assessments[j];
-      if(a.grade==null||a.grade==="") continue;
-      anyGrade=true;
-      var b=band(+a.grade);
-      inner += hbar(a.name, +a.grade, (+a.grade)+' · '+(+a.weight||0)+'%', 'var('+b.v+')');
+
+  var legend = '';
+  for(i=0;i<=4;i++) legend += '<span class="heat-cell mini l'+i+'"></span>';
+  var st = S.settings.gamify ? streak() : 0;
+
+  /* mục tiêu giờ mỗi tuần đặt trong Cài đặt — chỗ duy nhất còn hiển thị nó */
+  var goal = S.settings.weeklyGoal||0, goalLine = '';
+  if(goal>0){
+    var wkFrom = mondayOf(today()), done = 0;
+    for(i=0;i<7;i++){
+      var wd = addDays(wkFrom,i);
+      if(wd>today()) break;
+      done += byDay[iso(wd)]||0;
     }
-    if(inner) gradeBars += '<div class="eyebrow" style="margin:12px 0 2px">'+esc(s4.code)+'</div>'+inner;
-  }
-  /* kế hoạch vs thực tế, 8 tuần */
-  var goal = S.settings.weeklyGoal||900, cols='', maxW=goal;
-  var arr=[];
-  for(i=7;i>=0;i--){
-    var ws=addDays(wkStart,-7*i), we=addDays(ws,7);
-    var mv=studyMinutes((function(a2,b2){return function(x){var d=parseD(x.date); return d&&d>=a2&&d<b2;};})(ws,we));
-    arr.push({m:mv,label:fmtDate(ws)});
-    if(mv>maxW) maxW=mv;
-  }
-  for(i=0;i<arr.length;i++){
-    var h=arr[i].m/maxW*100;
-    cols += '<div class="col" title="'+fmtMins(arr[i].m)+'"><i style="height:'+h+'%;background:'
-         + (arr[i].m>=goal?'var(--ok)':'var(--accent)')+'"></i><span>'+arr[i].label.split(" ")[0]+'</span></div>';
-  }
-  var goalLine = '<div class="goalline" style="bottom:'+(goal/maxW*100)+'%"><span class="mono">mục tiêu '+fmtMins(goal)+'</span></div>';
-
-  /* mạnh nhất / yếu nhất */
-  var best=null, worst=null;
-  for(i=0;i<S.subjects.length;i++){
-    var g=gradeInfo(S.subjects[i]);
-    if(g.current==null) continue;
-    if(!best || g.current>best.g) best={s:S.subjects[i], g:g.current};
-    if(!worst || g.current<worst.g) worst={s:S.subjects[i], g:g.current};
-  }
-  var leastTime=null;
-  for(i=0;i<S.subjects.length;i++){
-    var mt=studyMinutes((function(id){return function(x){return x.subjectId===id;};})(S.subjects[i].id));
-    if(!leastTime || mt<leastTime.m) leastTime={s:S.subjects[i], m:mt};
+    goalLine = '<div class="goalbar"><div class="spread">'
+      + '<span class="eyebrow">tuần này</span>'
+      + '<span class="mono" style="font-size:11.5px;color:'+(done>=goal?'var(--ok)':'var(--ink2)')+'">'
+      + fmtMins(done)+' / '+fmtMins(goal)+'</span></div>'
+      + '<div class="bar thin" style="margin-top:5px"><i style="width:'+pct(done,goal)+'%;'
+      + (done>=goal?'background:var(--ok)':'')+'"></i></div></div>';
   }
 
-  var insight='';
-  if(best && worst && best.s!==worst.s){
-    insight += '<div class="insight"><span class="ipill" style="background:#e5f1ea;color:var(--ok)">Mạnh nhất</span>'
-      + '<b class="mono">'+esc(best.s.code)+'</b> — '+best.g.toFixed(1)+'%</div>';
-    insight += '<div class="insight"><span class="ipill" style="background:#f7e3e1;color:var(--urgent)">Cần chú ý</span>'
-      + '<b class="mono">'+esc(worst.s.code)+'</b> — '+worst.g.toFixed(1)+'%</div>';
-  }
-  if(leastTime){
-    insight += '<div class="insight"><span class="ipill" style="background:#f6ecd8;color:var(--warn)">Ít giờ nhất</span>'
-      + '<b class="mono">'+esc(leastTime.s.code)+'</b> — '+fmtMins(leastTime.m)+'</div>';
-  }
-  var wkAll = weakTopics();
-  if(wkAll.length){
-    insight += '<div class="insight"><span class="ipill" style="background:#f7e3e1;color:var(--urgent)">Chủ đề yếu</span>'
-      + wkAll.length+' chủ đề đang dưới mức vững</div>';
-  }
-
-  return '<div class="stack">'
-  + '<div class="grid g4">'
-    + statCard(pct(done,tot)+'<small>%</small>',"Hoàn thành cả kỳ")
-    + statCard(done+'<small>/'+tot+'</small>',"Việc đã xong")
-    + statCard(String(overdue),"Deadline quá hạn")
-    + statCard(fmtMins(weekMins/daysIn).replace(/([a-z])/g,'<small>$1</small>'),"Trung bình mỗi ngày")
-  + '</div>'
-  + '<div class="grid g2">'
-    + (insight?'<div class="card card-pad"><div class="eyebrow" style="margin-bottom:10px">Nhận xét nhanh</div>'+insight+'</div>':'')
-    + streakCard()
-  + '</div>'
-  + '<div class="grid g2">'
-    + '<div class="card"><div class="card-head"><h3>Thời gian học theo môn</h3></div><div class="card-pad">'
-      + (bySub||'<span class="muted">Chưa có phiên học nào.</span>')+'</div></div>'
-    + '<div class="card"><div class="card-head"><h3>Tiến độ theo môn</h3></div><div class="card-pad">'+progBars+'</div></div>'
-  + '</div>'
-  + '<div class="card"><div class="card-head"><h3>Kế hoạch so với thực tế</h3>'
-    + '<span class="eyebrow">mục tiêu '+fmtMins(goal)+'/tuần</span></div>'
-    + '<div class="card-pad"><div class="cols withgoal">'+cols+goalLine+'</div></div></div>'
-  + '<div class="card"><div class="card-head"><h3>Điểm theo assessment</h3></div><div class="card-pad">'
-    + (anyGrade?gradeBars:'<span class="muted">Chưa có assessment nào được chấm.</span>')+'</div></div>'
-  + '</div>';
-}
-function hbar(label, widthPct, value, color){
-  return '<div class="hbar"><span class="hbar-l">'+esc(label)+'</span>'
-    + '<span class="hbar-t" style="--hc:'+(color||'var(--accent)')+'"><i style="width:'+clamp(widthPct,0,100)+'%"></i></span>'
-    + '<span class="hbar-v">'+esc(value)+'</span></div>';
+  return '<div class="card"><div class="card-head">'
+    + '<h3>'+MONTHS[mo]+' '+y+'</h3>'
+    + '<div class="row" style="gap:6px">'
+      + '<button class="btn sm ghost" data-act="anMonth" data-n="-1" title="Tháng trước">←</button>'
+      + '<button class="btn sm ghost" data-act="anMonth" data-n="0">Tháng này</button>'
+      + '<button class="btn sm ghost" data-act="anMonth" data-n="1" title="Tháng sau">→</button>'
+    + '</div></div>'
+    + '<div class="card-pad">'
+      + (st ? '<div class="dl-meta" style="margin:-2px 0 12px">Chuỗi '+st+' ngày học liên tiếp</div>' : '')
+      + '<div class="heat-grid">'+head+cells+'</div>'
+      + goalLine
+      + '<div class="spread wrap" style="gap:10px;margin-top:14px;max-width:400px">'
+        + '<span class="dl-meta">'
+          + (active ? active+'/'+daysInMonth+' ngày · '+fmtMins(total)
+                    : 'Chưa học buổi nào tháng này')+'</span>'
+        + '<span class="heat-legend"><span class="eyebrow">ít</span>'+legend
+        + '<span class="eyebrow">nhiều</span></span>'
+      + '</div>'
+    + '</div></div>';
 }
 
+function bestDayCard(byDay){
+  /* trung bình mỗi thứ, tính trên số lần thứ đó đã đi qua kể từ ngày học đầu tiên */
+  var keys = Object.keys(byDay).sort();
+  if(!keys.length){
+    return '<div class="card"><div class="card-head"><h3>Ngày nào học được nhiều nhất</h3></div>'
+      + '<div class="card-pad muted" style="font-size:14px">'
+      + 'Chưa có phiên học nào. Bấm “Bắt đầu học” ở thanh trên cùng để bấm giờ, '
+      + 'mỗi phiên sẽ hiện ở đây.</div></div>';
+  }
+  var from = parseD(keys[0]), to = today();
+  var sum = [0,0,0,0,0,0,0], occ = [0,0,0,0,0,0,0], d, wd;
+  for(d=new Date(from.getTime()); d<=to; d=addDays(d,1)){
+    wd = (d.getDay()+6)%7;
+    occ[wd]++;
+    sum[wd] += byDay[iso(d)]||0;
+  }
+  var avg = [], best = 0, i;
+  for(i=0;i<7;i++){
+    avg.push(occ[i] ? sum[i]/occ[i] : 0);
+    if(avg[i] > avg[best]) best = i;
+  }
+  var rows = '';
+  for(i=0;i<7;i++){
+    var w = avg[best] ? avg[i]/avg[best]*100 : 0;
+    rows += '<div class="hbar'+(i===best?' hbar-best':'')+'">'
+      + '<span class="hbar-l">'+DOW[i]+'</span>'
+      + '<span class="hbar-t" style="--hc:'+(i===best?'var(--accent)':'var(--line)')+'">'
+      + '<i style="width:'+clamp(w,0,100)+'%"></i></span>'
+      + '<span class="hbar-v">'+(avg[i]>=1?fmtMins(avg[i]):'—')+'</span></div>';
+  }
+  return '<div class="card"><div class="card-head"><h3>Ngày nào học được nhiều nhất</h3>'
+    + '<span class="eyebrow">trung bình mỗi '+DOW[best].toLowerCase()+'</span></div>'
+    + '<div class="card-pad">'+rows
+    + '<div class="dl-meta" style="margin-top:12px">Trung bình mỗi ngày trong tuần, tính từ '
+    + fmtDate(from)+' tới nay.</div></div></div>';
+}
+
+function viewAnalytics(){
+  var byDay = minutesByDay();
+  return '<div class="grid g2 top">'+heatMonthCard(byDay)+bestDayCard(byDay)+'</div>';
+}
 /* ---------- P. CHẾ ĐỘ ÔN THI --------------------------------------------- */
 function viewExam(){
   var list = subjectsWithExam();
@@ -1445,6 +1438,12 @@ function modalExamPlan(sid){
 
 /* ---------- T. THAO TÁC MỚI ---------------------------------------------- */
 ACT.calView   = function(el){ S.view.calView = el.dataset.v; };
+ACT.anMonth = function(el){
+  var n = +el.dataset.n;
+  if(!n){ S.view.anMonth = null; return; }
+  var d = analyticsMonth();
+  S.view.anMonth = iso(new Date(d.getFullYear(), d.getMonth()+n, 1));
+};
 ACT.calFilter = function(el){ S.view.calFilter = el.dataset.sid||""; };
 ACT.calPick   = function(el){ S.view.calDate = el.dataset.d; S.view.calView = "day"; };
 ACT.calMove   = function(el){
