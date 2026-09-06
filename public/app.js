@@ -697,8 +697,7 @@ function projectsCard(){
           + '<input class="ptask-due" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
             + 'data-act="setPTaskDue" data-pid="'+pr.id+'" data-ti="'+j+'">'
           + '<button class="btn ghost sm" data-act="delPTask" data-pid="'+pr.id+'" data-ti="'+j+'" title="Xoá việc">×</button>'
-      })
-        + '</div>';
+      });
     }
     out += '<div class="projgroup">'
       + '<div class="row" style="gap:6px">'
