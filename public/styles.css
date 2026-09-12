@@ -212,6 +212,27 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
 .task-row>.check-lab{flex:1;min-width:0;cursor:text;overflow-wrap:anywhere;line-height:1.45}
 .task-row>.check-lab:hover{text-decoration:underline dotted var(--line);text-underline-offset:3px}
 .task-row.done>.check-lab{color:var(--ink3);text-decoration:line-through}
+.archnote{
+  display:block;margin:6px 0 2px;padding:0;background:none;border:0;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:var(--ink3);text-align:left;
+}
+.archnote:hover{color:var(--accent);text-decoration:underline}
+
+/* trang Lưu trữ */
+.archrow{align-items:center;gap:10px;border-bottom:1px solid var(--line2);padding:9px 0}
+.archrow:last-child{border-bottom:0}
+.archrow>.check-lab{flex:1;min-width:0}
+.archwhere{font-size:11px;color:var(--ink3);white-space:nowrap}
+.archtime{
+  font-size:11.5px;color:var(--ink2);white-space:nowrap;text-align:right;
+  min-width:44px;padding-left:12px;border-left:1px solid var(--line2);
+}
+@media (max-width:620px){
+  .archrow{flex-wrap:wrap}
+  .archrow>.check-lab{flex:1 0 70%}
+  .archtime{padding-left:0;border-left:0;text-align:left}
+}
+
 input.task-in{
   flex:1;min-width:0;font-size:14px;padding:3px 8px;
   border:1px solid var(--accent);border-radius:6px;background:var(--surface);outline:none;

@@ -1092,6 +1092,7 @@ function examPanel(s, a, days){
   var cl = examChecklist(s), items='', cdone=0;
   for(i=0;i<cl.length;i++){
     if(cl[i].done) cdone++;
+    if(isArchived(cl[i])) continue;
     items += taskLine({
       tk:"exam", sid:s.id, i:i, done:cl[i].done, label:cl[i].label,
       toggle:'data-act="examCheck" data-sid="'+s.id+'" data-i="'+i+'"',
@@ -1125,6 +1126,7 @@ function examPanel(s, a, days){
     + '<div class="card"><div class="card-head"><h3>Checklist ôn thi</h3>'
       + '<span class="mono" style="font-size:12px">'+cdone+'/'+cl.length+'</span></div><div class="card-pad">'
       + items
+      + archivedNote(cl)
       + addRow("exam", s.id)
       + '<div class="bar thin" style="margin:12px 0"><i style="width:'+pct(cdone,cl.length)+'%"></i></div>'
       + '<button class="btn sm" data-act="addExamItem" data-sid="'+s.id+'">+ Thêm việc</button>'

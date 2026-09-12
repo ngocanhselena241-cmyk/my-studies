@@ -377,8 +377,13 @@ function iso(d){
    ngày. Bỏ tick thì xoá dấu ngày đi. */
 function setDone(t, done){
   t.done = done;
-  if(done) t.doneAt = iso(today());
-  else delete t.doneAt;
+  if(done){
+    t.doneAt = iso(today());     /* ngày, để heatmap đếm */
+    t.doneTs = Date.now();       /* mốc giờ, để trang Lưu trữ hiện giờ phút */
+  } else {
+    delete t.doneAt;
+    delete t.doneTs;
+  }
 }
 
 function cleanDate(v){
@@ -689,6 +694,7 @@ function projectsCard(){
     var pr=S.projects[i], items='';
     for(j=0;j<(pr.tasks||[]).length;j++){
       var t=pr.tasks[j];
+      if(isArchived(t)) continue;
       var c = (t.due && !t.done) ? countdown(t.due) : null;
       items += taskLine({
         tk:"ptask", pid:pr.id, i:j, done:t.done, label:t.label, cls:"ptask",
@@ -706,6 +712,7 @@ function projectsCard(){
         + '<button class="btn ghost sm" data-act="delProj" data-pid="'+pr.id+'" title="Xoá dự án">×</button>'
       + '</div>'
       + items
+      + archivedNote(pr.tasks)
       + addRow("ptask", pr.id)
       + '<button class="btn sm ghost" style="margin-top:4px" data-act="addPTask" data-pid="'+pr.id+'">+ thêm việc</button>'
       + '</div>';
@@ -732,6 +739,7 @@ function render(){
     : v.tab==="subject"   ? viewSubject()
     : v.tab==="deadlines" ? viewDeadlines()
     : v.tab==="wam"       ? viewWam()
+    : v.tab==="archive"   ? viewArchive()
     : v.tab==="calendar"  ? viewCalendar()
     : v.tab==="exam"      ? viewExam()
     : v.tab==="assist"    ? viewAssist()
@@ -757,6 +765,7 @@ function topbar(){
   }
   nav += '<button data-act="go" data-tab="deadlines" class="'+(v.tab==="deadlines"?"on":"")+'">Deadline</button>'
        + '<button data-act="go" data-tab="wam" class="'+(v.tab==="wam"?"on":"")+'">WAM</button>'
+       + '<button data-act="go" data-tab="archive" class="'+(v.tab==="archive"?"on":"")+'">Lưu trữ</button>'
        + '<button data-act="go" data-tab="calendar" class="'+(v.tab==="calendar"?"on":"")+'">Lịch</button>'
        + '<button data-act="go" data-tab="exam" class="'+(v.tab==="exam"?"on":"")+'">Ôn thi</button>'
        + '<button data-act="go" data-tab="assist" class="'+(v.tab==="assist"?"on":"")+'">Trợ lý</button>'
@@ -826,6 +835,116 @@ function timerWidget(){
     + '<span class="timer-t timer-run">'+fmtMins(mins)+'</span>'
     + '<span class="pill acc">'+esc(s?s.code:"—")+'</span>'
     + '<button class="btn sm" data-act="stopTimer">Dừng &amp; lưu</button>'
+  + '</div>';
+}
+
+/* ---------- 6. LƯU TRỮ ---------------------------------------------------
+   Việc tick xong quá 7 ngày thì rời khỏi danh sách gốc và dồn về đây, để
+   những chỗ đang làm việc hằng ngày đỡ dài. Trạng thái này tính ra từ ngày
+   hoàn thành chứ không chuyển dữ liệu đi đâu, nên bỏ tick là việc quay lại
+   chỗ cũ ngay.
+   ------------------------------------------------------------------------ */
+var ARCHIVE_DAYS = 7;
+
+function archiveAge(t){
+  if(!t || !t.done || !t.doneAt) return -1;
+  var d = parseD(t.doneAt);
+  if(!d) return -1;
+  return Math.round((today().getTime()-d.getTime())/DAY);
+}
+function isArchived(t){ return archiveAge(t) >= ARCHIVE_DAYS; }
+
+/* bao nhiêu việc trong danh sách này đã bị dồn sang Lưu trữ */
+function archivedIn(list){
+  var n=0;
+  for(var i=0;i<(list||[]).length;i++) if(isArchived(list[i])) n++;
+  return n;
+}
+function archivedNote(list){
+  var n = archivedIn(list);
+  if(!n) return '';
+  return '<button class="archnote" data-act="go" data-tab="archive">'
+       + n+' việc đã chuyển sang Lưu trữ</button>';
+}
+
+/* ngày đã nằm ở tiêu đề nhóm, mỗi dòng chỉ cần giờ phút */
+function fmtClock(t){
+  if(!t.doneTs) return "—";
+  var x = new Date(t.doneTs);
+  return String(x.getHours()).padStart(2,"0")+":"+String(x.getMinutes()).padStart(2,"0");
+}
+
+function archivedTasks(){
+  var out=[], i, j, k;
+  function push(t, where, toggle){
+    if(!isArchived(t)) return;
+    var d = parseD(t.doneAt);
+    out.push({t:t, where:where, toggle:toggle, day:t.doneAt,
+              ts: t.doneTs || (d?d.getTime():0)});
+  }
+  for(i=0;i<S.subjects.length;i++){
+    var s=S.subjects[i];
+    for(j=0;j<(s.weeks||[]).length;j++){
+      var w=s.weeks[j];
+      for(k=0;k<(w.tasks||[]).length;k++)
+        push(w.tasks[k], esc(s.code)+' · tuần '+w.n,
+          'data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+k+'"');
+    }
+    for(j=0;j<(s.assessments||[]).length;j++){
+      var a=s.assessments[j];
+      for(k=0;k<(a.subtasks||[]).length;k++)
+        push(a.subtasks[k], esc(s.code)+' · '+esc(a.name),
+          'data-act="toggleSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+k+'"');
+    }
+    var cl = s.examList||[];
+    for(k=0;k<cl.length;k++)
+      push(cl[k], esc(s.code)+' · ôn thi',
+        'data-act="examCheck" data-sid="'+s.id+'" data-i="'+k+'"');
+  }
+  for(i=0;i<(S.projects||[]).length;i++){
+    var pr=S.projects[i];
+    for(k=0;k<(pr.tasks||[]).length;k++)
+      push(pr.tasks[k], esc(pr.name||'Dự án'),
+        'data-act="togglePTask" data-pid="'+pr.id+'" data-ti="'+k+'"');
+  }
+  out.sort(function(x,y){ return y.ts-x.ts; });
+  return out;
+}
+
+function viewArchive(){
+  var list = archivedTasks();
+  if(!list.length){
+    return '<div class="center-empty">Chưa có việc nào ở đây. '
+         + 'Việc bạn tick xong sẽ tự chuyển sang Lưu trữ sau '+ARCHIVE_DAYS+' ngày, '
+         + 'kèm ngày giờ hoàn thành.</div>';
+  }
+  var out='', curDay=null, i;
+  for(i=0;i<list.length;i++){
+    var it = list[i], d = parseD(it.day);
+    if(it.day!==curDay){
+      if(curDay!==null) out += '</div></div>';
+      curDay = it.day;
+      out += '<div class="card" style="margin-bottom:12px"><div class="card-head">'
+        + '<h3>'+(d ? DOW[(d.getDay()+6)%7]+', '+d.getDate()+' '+MON_SHORT[d.getMonth()]
+                      +(d.getFullYear()!==today().getFullYear()?' '+d.getFullYear():'')
+                    : 'Không rõ ngày')+'</h3>'
+        + '<span class="eyebrow">'+archiveAge(it.t)+' ngày trước</span></div>'
+        + '<div class="card-pad">';
+    }
+    out += '<div class="task-row done archrow">'
+      + '<button class="tickbox on" '+it.toggle+' title="Bỏ tick để đưa việc trở lại chỗ cũ">'
+        + '<span class="box">'+TICK+'</span></button>'
+      + '<span class="check-lab">'+esc(it.t.label)+'</span>'
+      + '<span class="archwhere mono">'+it.where+'</span>'
+      + '<span class="archtime mono" title="'+esc(it.day)+'">'+fmtClock(it.t)+'</span>'
+    + '</div>';
+  }
+  out += '</div></div>';
+  return '<div>'
+    + '<div class="spread wrap" style="margin-bottom:14px;gap:9px">'
+      + '<span class="eyebrow">'+list.length+' việc đã hoàn thành xong hơn '+ARCHIVE_DAYS+' ngày</span>'
+      + '<span class="dl-meta">Bỏ tick để đưa một việc trở lại chỗ cũ.</span>'
+    + '</div>' + out
   + '</div>';
 }
 
@@ -1165,6 +1284,7 @@ function thisWeekCard(){
     /* việc đã tick vẫn ở nguyên chỗ, chỉ gạch ngang cho biết đã xong */
     for(var t=0;t<w.tasks.length;t++){
       var tk=w.tasks[t];
+      if(isArchived(tk)) continue;
       items += taskLine({
         tk:"task", sid:s.id, wk:cw, i:t, done:tk.done, label:tk.label,
         toggle:'data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+cw+'" data-ti="'+t+'"'
@@ -1175,7 +1295,7 @@ function thisWeekCard(){
          + '<span class="pill" style="background:'+s.color+'22;color:'+s.color+';border-color:transparent">'+esc(s.code)+'</span>'
          + '<span style="font-size:13.5px;font-weight:500">'+esc(w.topic||"")+'</span></div>'
          + '<span class="mono" style="font-size:12px;color:var(--ink3)">'+wp.done+'/'+wp.total+'</span></div>'
-         + items + '</div>';
+         + items + archivedNote(w.tasks) + '</div>';
   }
   if(!any) return '';
   return '<div class="card"><div class="card-head"><h3>Tuần '+cw+' — việc cần làm</h3>'
@@ -1273,6 +1393,7 @@ function subWeekly(s){
     var items='';
     for(var t=0;t<(w.tasks||[]).length;t++){
       var tk=w.tasks[t];
+      if(isArchived(tk)) continue;
       items += taskLine({
         tk:"task", sid:s.id, wk:w.n, i:t, done:tk.done, label:tk.label,
         toggle:'data-act="toggleTask" data-sid="'+s.id+'" data-wk="'+w.n+'" data-ti="'+t+'"',
@@ -1290,7 +1411,7 @@ function subWeekly(s){
         + '<span class="bar wk-bar" style="--sc:'+s.color+'"><i style="width:'+wp.pct+'%"></i></span>'
         + '<span class="wk-pct">'+wp.pct+'%</span>'
       + '</button>'
-      + (open ? '<div class="wk-body">'+attendRow(s,w)+items+addRow("task", s.id, w.n)
+      + (open ? '<div class="wk-body">'+attendRow(s,w)+items+archivedNote(w.tasks)+addRow("task", s.id, w.n)
           + '<div class="row wrap" style="gap:7px;margin-top:12px">'
           + '<button class="btn sm" data-act="addTask" data-sid="'+s.id+'" data-wk="'+w.n+'">+ Thêm việc</button>'
           + '<button class="btn sm ghost" data-act="editTopic" data-sid="'+s.id+'" data-wk="'+w.n+'">Đổi chủ đề</button>'
@@ -1312,6 +1433,7 @@ function subAssess(s){
     var subs='';
     for(var j=0;j<(a.subtasks||[]).length;j++){
       var t=a.subtasks[j];
+      if(isArchived(t)) continue;
       subs += taskLine({
         tk:"sub", sid:s.id, aid:a.id, i:j, done:t.done, label:t.label,
         toggle:'data-act="toggleSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'"',
@@ -1336,6 +1458,7 @@ function subAssess(s){
         + '<span class="mono" style="font-size:12.5px">'+p.pct+'%</span></div>'
         + '<div class="bar" style="--sc:'+s.color+';margin-bottom:12px"><i style="width:'+p.pct+'%"></i></div>'
         + subs
+        + archivedNote(a.subtasks)
         + addRow("sub", s.id, a.id)
         + '<div class="row wrap" style="gap:8px;margin-top:12px">'
           + '<button class="btn sm" data-act="addSub" data-sid="'+s.id+'" data-aid="'+a.id+'">+ Thêm bước</button>'
