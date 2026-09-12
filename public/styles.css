@@ -169,7 +169,11 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.01em}
   color:var(--ink2);line-height:1.25;
 }
 .dl-date b{display:block;font-size:16px;font-weight:600;letter-spacing:-.02em}
-.dl-body{flex:1;min-width:0}
+/* tên việc và phần chú thích là hai thẻ span cạnh nhau nên dính liền nhau;
+   xếp thành hàng flex có khoảng cách, hẹp quá thì chú thích tự xuống dòng */
+.dl-body{flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.dl-body .dl-title{min-width:0}
+.dl-body .dl-meta{margin-top:0}
 .dl-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dl-meta{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:2px}
 .cd{font-family:var(--mono);font-size:11px;font-weight:500;padding:3px 7px;border-radius:20px;white-space:nowrap}
