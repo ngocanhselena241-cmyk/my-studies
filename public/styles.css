@@ -338,6 +338,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 }
 .ev.due{background:var(--violet-soft);color:var(--violet);font-weight:500}
 .ev.exam{background:#f7e3e1;color:var(--urgent);font-weight:600}
+.ev.step{background:var(--surface2);color:var(--ink2);border-left-style:dashed}
 /* việc trong dự án: không thuộc môn nào nên để trung tính, viền gạch đứt */
 .ev.proj{background:var(--surface2);color:var(--ink2);border-left-style:dashed}
 
@@ -528,16 +529,18 @@ input.projname{
 }
 input.projname:hover{border-color:var(--line)}
 input.projname:focus{border-color:var(--accent);background:var(--surface);outline:none}
-.ptask{align-items:center;gap:8px;padding:4px 0}
-input.ptask-due{
+/* dòng việc có ô hạn chót: dùng cho cả việc trong dự án và bước của
+   assessment. Lớp .ptask giữ lại làm dấu nhận biết riêng việc của dự án. */
+.duerow{align-items:center;gap:8px;padding:4px 0}
+input.duedate{
   flex:none;width:140px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;
   background:var(--surface);font-family:var(--mono);font-size:11.5px;color:var(--ink3);
 }
-input.ptask-due:focus{color:var(--ink);border-color:var(--accent);outline:none}
-input.ptask-due:hover{border-color:var(--ink3)}
-input.ptask-due::-webkit-calendar-picker-indicator{opacity:.45;cursor:pointer}
-input.ptask-due:hover::-webkit-calendar-picker-indicator{opacity:1}
-@media (max-width:620px){ .ptask{flex-wrap:wrap} .ptask .check{flex:1 0 100%} }
+input.duedate:focus{color:var(--ink);border-color:var(--accent);outline:none}
+input.duedate:hover{border-color:var(--ink3)}
+input.duedate::-webkit-calendar-picker-indicator{opacity:.45;cursor:pointer}
+input.duedate:hover::-webkit-calendar-picker-indicator{opacity:1}
+@media (max-width:620px){ .duerow{flex-wrap:wrap} .duerow>.check-lab{flex:1 0 100%} }
 .dl.dl-plain{cursor:default;background:none}
 .dl.dl-plain:hover{background:none}
 

@@ -697,10 +697,10 @@ function projectsCard(){
       if(isArchived(t)) continue;
       var c = (t.due && !t.done) ? countdown(t.due) : null;
       items += taskLine({
-        tk:"ptask", pid:pr.id, i:j, done:t.done, label:t.label, cls:"ptask",
+        tk:"ptask", pid:pr.id, i:j, done:t.done, label:t.label, cls:"duerow ptask",
         toggle:'data-act="togglePTask" data-pid="'+pr.id+'" data-ti="'+j+'"',
         after: (c?'<span class="cd '+c.cls+'">'+c.txt+'</span>':'')
-          + '<input class="ptask-due" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
+          + '<input class="duedate" type="date" value="'+esc(t.due||"")+'" title="Hạn chót (không bắt buộc)" '
             + 'data-act="setPTaskDue" data-pid="'+pr.id+'" data-ti="'+j+'">'
           + '<button class="btn ghost sm" data-act="delPTask" data-pid="'+pr.id+'" data-ti="'+j+'" title="Xoá việc">×</button>'
       });
@@ -1048,14 +1048,41 @@ function wireTaskInput(){
 
 /* ---------- 6b. DEADLINE ------------------------------------------------ */
 /* assessment và việc trong dự án nằm chung một danh sách, xếp theo ngày */
+/* bước của assessment có đặt hạn riêng; bỏ qua bước đã xong và assessment
+   đã có điểm, giống cách allDeadlines() lọc */
+function subDeadlines(){
+  var out=[], i, j, k;
+  for(i=0;i<S.subjects.length;i++){
+    var s=S.subjects[i];
+    for(j=0;j<s.assessments.length;j++){
+      var a=s.assessments[j];
+      if(a.status==="Đã có điểm") continue;
+      for(k=0;k<(a.subtasks||[]).length;k++){
+        var t=a.subtasks[k];
+        if(t.done || !t.due) continue;
+        var d=parseD(t.due);
+        if(d) out.push({s:s, a:a, t:t, sub:true, d:d});
+      }
+    }
+  }
+  return out;
+}
+
 function mergedDeadlines(){
-  var dl = allDeadlines().concat(projDeadlines());
+  var dl = allDeadlines().concat(projDeadlines()).concat(subDeadlines());
   dl.sort(function(x,y){ return x.d-y.d; });
   return dl;
 }
 
 function deadlineRow(it){
   var date = '<span class="dl-date"><b>'+it.d.getDate()+'</b>'+MON_SHORT[it.d.getMonth()]+'</span>';
+  if(it.sub){
+    var sc = countdown(it.t.due);
+    return '<button class="dl" data-act="openAssess" data-sid="'+it.s.id+'" data-aid="'+it.a.id+'">'+date
+      + '<span class="dl-body"><span class="dl-title">'+esc(it.t.label)+'</span>'
+      + '<span class="dl-meta">'+esc(it.s.code)+' · bước của '+esc(it.a.name)+'</span></span>'
+      + '<span class="cd '+sc.cls+'">'+sc.txt+'</span></button>';
+  }
   if(it.proj){
     var pc = countdown(it.t.due);
     return '<div class="dl dl-plain">'+date
@@ -1434,10 +1461,14 @@ function subAssess(s){
     for(var j=0;j<(a.subtasks||[]).length;j++){
       var t=a.subtasks[j];
       if(isArchived(t)) continue;
+      var sc = (t.due && !t.done) ? countdown(t.due) : null;
       subs += taskLine({
-        tk:"sub", sid:s.id, aid:a.id, i:j, done:t.done, label:t.label,
+        tk:"sub", sid:s.id, aid:a.id, i:j, done:t.done, label:t.label, cls:"duerow",
         toggle:'data-act="toggleSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'"',
-        after:'<button class="btn ghost sm" data-act="delSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'">×</button>'
+        after: (sc?'<span class="cd '+sc.cls+'">'+sc.txt+'</span>':'')
+          + '<input class="duedate" type="date" value="'+esc(t.due||"")+'" title="Hạn chót cho bước này (không bắt buộc)" '
+            + 'data-act="setSubDue" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'">'
+          + '<button class="btn ghost sm" data-act="delSub" data-sid="'+s.id+'" data-aid="'+a.id+'" data-ti="'+j+'" title="Xoá bước">×</button>'
       });
     }
     var statusOpts='';
@@ -2094,6 +2125,16 @@ var CHG = {
   /* Ô ngày bắn change ngay khi giá trị vừa đủ hợp lệ: gõ số đầu của năm là
      đã thành ngày hợp lệ năm 0002. Vẽ lại lúc đó sẽ thay mới ô nhập và cướp
      mất con trỏ, không gõ tiếp được. Chỉ lưu rồi thôi — để focusout vẽ lại. */
+  /* cùng lý do với setPTaskDue: ô ngày bắn change ngay khi giá trị vừa đủ
+     hợp lệ, vẽ lại lúc đó là cướp mất con trỏ đang gõ dở năm */
+  setSubDue:function(el){
+    var s = subj(el.dataset.sid);
+    if(s) for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid){
+      var t = (s.assessments[i].subtasks||[])[+el.dataset.ti];
+      if(t) t.due = el.value || "";
+    }
+    return "noRender";
+  },
   setPTaskDue:function(el){
     var pr = projById(el.dataset.pid);
     if(pr){
@@ -2325,13 +2366,19 @@ document.addEventListener("change",function(ev){
 /* rời ô chọn ngày: bỏ ngày gõ dở (năm một, hai chữ số) rồi mới vẽ lại,
    để chip đếm ngược và danh sách deadline cập nhật theo */
 document.addEventListener("focusout", function(ev){
-  var el = ev.target.closest ? ev.target.closest('[data-act="setPTaskDue"]') : null;
+  var el = ev.target.closest
+    ? ev.target.closest('[data-act="setPTaskDue"],[data-act="setSubDue"]') : null;
   if(!el) return;
-  var pr = projById(el.dataset.pid);
-  if(pr){
-    var t = pr.tasks[+el.dataset.ti];
-    if(t && t.due && !cleanDate(t.due)){ t.due = ""; el.value = ""; }
+  var t = null;
+  if(el.dataset.act==="setPTaskDue"){
+    var pr = projById(el.dataset.pid);
+    if(pr) t = pr.tasks[+el.dataset.ti];
+  } else {
+    var s = subj(el.dataset.sid);
+    if(s) for(var i=0;i<s.assessments.length;i++) if(s.assessments[i].id===el.dataset.aid)
+      t = (s.assessments[i].subtasks||[])[+el.dataset.ti];
   }
+  if(t && t.due && !cleanDate(t.due)){ t.due = ""; el.value = ""; }
   save();
   setTimeout(render, 0);
 });

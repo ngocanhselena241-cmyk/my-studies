@@ -711,9 +711,15 @@ function calEvents(){
 
     for(j=0;j<s.assessments.length;j++){
       var a=s.assessments[j];
-      if(!a.due) continue;
-      push(a.due,{cls:/exam/i.test(a.type||"")?"exam":"due", time:"",
+      if(a.due) push(a.due,{cls:/exam/i.test(a.type||"")?"exam":"due", time:"",
                   txt:s.code+" · "+a.name, sid:s.id, aid:a.id, color:s.color, sort:0});
+      /* bước nào có đặt hạn riêng thì cũng lên lịch, nhạt hơn assessment */
+      for(var q=0;q<(a.subtasks||[]).length;q++){
+        var st=a.subtasks[q];
+        if(!st.due || st.done) continue;
+        push(st.due,{cls:"step", time:"", txt:s.code+" · "+st.label,
+                     sid:s.id, aid:a.id, color:s.color, sort:0});
+      }
     }
     if(semStart()){
       for(n=1;n<=S.semester.weeks;n++){
